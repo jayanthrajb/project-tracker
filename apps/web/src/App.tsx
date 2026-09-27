@@ -73,6 +73,7 @@ function ProtectedLayout() {
               placeholder="Search items and press Enter"
             />
             <select
+              aria-label="Project switcher"
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm"
               value={currentProjectId}
               onChange={(event) => event.target.value && navigate(`/projects/${event.target.value}`)}

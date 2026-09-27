@@ -173,6 +173,9 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
   if (!req.user || !canEditItem(req.user.id, req.user.role, existing)) {
     throw new AppError(403, 'You cannot edit this item');
   }
+  if (input.projectId && input.projectId !== existing.projectId) {
+    throw new AppError(400, 'Moving items between projects is not supported in Phase 1');
+  }
 
   const nextProjectId = input.projectId ?? existing.projectId;
   const nextReporterId = input.reporterId ?? existing.reporterId;

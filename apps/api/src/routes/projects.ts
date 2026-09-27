@@ -89,25 +89,28 @@ projectsRouter.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   const input = projectSchema.partial().parse(req.body);
-  const project = await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      name: input.name,
-      code: input.code,
-      description: input.description,
-      status: input.status,
-      ownerId: input.ownerId,
-    },
-    include: {
-      owner: { select: { id: true, name: true, email: true, role: true } },
-      members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
-    },
-  });
+  await prisma.$transaction(async (tx) => {
+    const updated = await tx.project.update({
+      where: { id: projectId },
+      data: {
+        name: input.name,
+        code: input.code,
+        description: input.description,
+        status: input.status,
+        ownerId: input.ownerId,
+      },
+      include: {
+        owner: { select: { id: true, name: true, email: true, role: true } },
+        members: { include: { user: { select: { id: true, name: true, email: true, role: true } } } },
+      },
+    });
 
-  if (input.memberIds) {
-    await prisma.projectMember.deleteMany({ where: { projectId } });
-    await prisma.projectMember.createMany({ data: Array.from(new Set([project.ownerId, ...input.memberIds])).map((userId) => ({ projectId, userId })) });
-  }
+    if (input.memberIds) {
+      await tx.projectMember.deleteMany({ where: { projectId } });
+      await tx.projectMember.createMany({ data: Array.from(new Set([updated.ownerId, ...input.memberIds])).map((userId) => ({ projectId, userId })) });
+    }
+
+  });
 
   const hydrated = await prisma.project.findUnique({
     where: { id: projectId },
@@ -130,8 +133,10 @@ projectsRouter.patch('/:id/members', asyncHandler(async (req, res) => {
   const project = await prisma.project.findUnique({ where: { id: projectId } });
   if (!project) throw new AppError(404, 'Project not found');
 
-  await prisma.projectMember.deleteMany({ where: { projectId } });
-  await prisma.projectMember.createMany({ data: Array.from(new Set([project.ownerId, ...input.memberIds])).map((userId) => ({ projectId, userId })) });
+  await prisma.$transaction([
+    prisma.projectMember.deleteMany({ where: { projectId } }),
+    prisma.projectMember.createMany({ data: Array.from(new Set([project.ownerId, ...input.memberIds])).map((userId) => ({ projectId, userId })) }),
+  ]);
 
   const hydrated = await prisma.project.findUnique({
     where: { id: projectId },

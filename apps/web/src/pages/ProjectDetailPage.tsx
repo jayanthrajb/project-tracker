@@ -98,6 +98,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
       )}
       {(activeItem || creating) && (
         <ItemFormModal
+          key={activeItem?.id ?? `new-${projectId}`}
           item={activeItem}
           projects={projects.data?.projects ?? []}
           users={users}
