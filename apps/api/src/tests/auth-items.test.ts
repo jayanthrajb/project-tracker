@@ -122,10 +122,11 @@ describe('auth and items routes', () => {
       name: 'New User',
       email: 'new.user@example.com',
       password: 'Password123!',
-      role: 'DEVELOPER',
+      role: 'ADMIN',
     });
 
     expect(registerResponse.status).toBe(201);
+    expect(registerResponse.body.user.role).toBe('DEVELOPER');
 
     const loginResponse = await agent.post('/api/auth/login').send({
       email: 'sara.manager@example.com',

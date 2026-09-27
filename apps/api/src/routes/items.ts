@@ -101,7 +101,27 @@ function normalizeQueryArray(value?: string | string[]) {
   return Array.isArray(value) ? value : value.split(',').filter(Boolean);
 }
 
-async function listItems(rawQuery: unknown, options?: { exportAll?: boolean }) {
+function applyReadScope(baseWhere: Record<string, unknown>, user?: { id: string; role: UserRole }) {
+  if (!user || user.role !== UserRole.DEVELOPER) {
+    return baseWhere;
+  }
+
+  return {
+    AND: [
+      baseWhere,
+      {
+        project: {
+          OR: [
+            { ownerId: user.id },
+            { members: { some: { userId: user.id } } },
+          ],
+        },
+      },
+    ],
+  };
+}
+
+async function listItems(rawQuery: unknown, user?: { id: string; role: UserRole }, options?: { exportAll?: boolean }) {
   const query = querySchema.parse(rawQuery);
   const filters = {
     projectId: query.projectId,
@@ -114,7 +134,7 @@ async function listItems(rawQuery: unknown, options?: { exportAll?: boolean }) {
     dueBefore: query.dueBefore,
   };
 
-  const where = buildItemWhere(filters);
+  const where = applyReadScope(buildItemWhere(filters), user);
   const rows = await prisma.item.findMany({ where, include: itemInclude });
   const enriched = rows.map((item) => ({ ...item, score: calculateItemScore(item) }));
   const sorted = sortItems(enriched, query.sort);
@@ -130,7 +150,7 @@ async function listItems(rawQuery: unknown, options?: { exportAll?: boolean }) {
 }
 
 itemsRouter.get('/', asyncHandler(async (req, res) => {
-  res.json(await listItems(req.query));
+  res.json(await listItems(req.query, req.user));
 }));
 
 itemsRouter.post('/', asyncHandler(async (req, res) => {
@@ -226,6 +246,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
   const mapping = req.body.mapping
     ? parseJsonField(req.body.mapping, z.record(z.string(), z.string()), 'mapping')
     : undefined;
+  if (!req.user) throw new AppError(401, 'Authentication required');
   const parsed = parseCsvRows(req.file.buffer.toString('utf-8'));
   const normalized = normalizeImportRows(parsed.data, mapping);
   const errors = normalized.filter((entry) => entry.errors.length > 0).map((entry) => ({ row: entry.index + 2, errors: entry.errors }));
@@ -261,6 +282,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
       });
       continue;
     }
+    await assertCanCreateItem(req.user, project.id, reporter.id, assignee?.id ?? null);
 
     const item = await prisma.$transaction(async (tx) => {
       const key = await nextItemKey(tx as typeof prisma, project.id);
@@ -292,7 +314,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
 }));
 
 itemsRouter.get('/export', asyncHandler(async (req, res) => {
-  const result = await listItems(req.query, { exportAll: true });
+  const result = await listItems(req.query, req.user, { exportAll: true });
   const csv = Papa.unparse(result.items.map((item) => ({
     key: item.key,
     projectCode: item.project.code,

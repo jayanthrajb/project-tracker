@@ -10,15 +10,28 @@ export const dashboardRouter = Router();
 dashboardRouter.use(requireAuth);
 
 dashboardRouter.get('/', asyncHandler(async (req, res) => {
+  const projectScope = req.user?.role === 'DEVELOPER'
+    ? {
+        OR: [
+          { ownerId: req.user.id },
+          { members: { some: { userId: req.user.id } } },
+        ],
+      }
+    : {};
   const [items, projects] = await Promise.all([
     prisma.item.findMany({
+      where: req.user?.role === 'DEVELOPER'
+        ? {
+            project: projectScope,
+          }
+        : undefined,
       include: {
         project: { select: { id: true, name: true, code: true } },
         assignee: { select: { id: true, name: true, email: true } },
         reporter: { select: { id: true, name: true, email: true } },
       },
     }),
-    prisma.project.findMany(),
+    prisma.project.findMany({ where: projectScope }),
   ]);
 
   const now = new Date();

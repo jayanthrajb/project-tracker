@@ -83,8 +83,9 @@ export function ItemsBoard({
     <div className="grid gap-4 xl:grid-cols-5">
       {columns.map((status) => (
         <div key={status} className="rounded-2xl border border-slate-200 bg-white p-3" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
-          const payload = event.dataTransfer.getData('application/json');
-          if (payload) onDropStatus(JSON.parse(payload), status);
+          const itemId = event.dataTransfer.getData('text/plain');
+          const item = items.find((entry) => entry.id === itemId);
+          if (item) onDropStatus(item, status);
         }}>
           <div className="mb-3 flex items-center justify-between">
             <h3 className="font-semibold">{status.replaceAll('_', ' ')}</h3>
@@ -92,7 +93,7 @@ export function ItemsBoard({
           </div>
           <div className="grid gap-3">
             {items.filter((item) => item.status === status).map((item) => (
-              <button key={item.id} draggable onDragStart={(event) => event.dataTransfer.setData('application/json', JSON.stringify(item))} className="rounded-xl border border-slate-200 p-3 text-left hover:border-slate-400" onClick={() => onOpen(item)}>
+              <button key={item.id} draggable onDragStart={(event) => event.dataTransfer.setData('text/plain', item.id)} className="rounded-xl border border-slate-200 p-3 text-left hover:border-slate-400" onClick={() => onOpen(item)}>
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-xs text-slate-500">{item.key}</div>

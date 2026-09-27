@@ -65,7 +65,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
 
   const users = projects.data?.users ?? [];
   const filteredItems = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
-  const canCreateItems = user.role !== 'DEVELOPER' || Boolean(projectQuery.data?.project.members.some((member) => member.user.id === user.id));
+  const canCreateItems = user.role !== 'DEVELOPER' || Boolean(projectQuery.data?.project.ownerId === user.id || projectQuery.data?.project.members.some((member) => member.user.id === user.id));
 
   if (projectQuery.isLoading || projects.isLoading || itemsQuery.isLoading) return <div>Loading project…</div>;
   const project = projectQuery.data?.project;
