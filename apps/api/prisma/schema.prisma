@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  MANAGER
+  DEVELOPER
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum ItemType {
+  TASK
+  BUG
+  RISK
+  ENHANCEMENT
+}
+
+enum ItemStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  IN_REVIEW
+  DONE
+}
+
+enum ItemPriority {
+  P0
+  P1
+  P2
+  P3
+}
+
+enum ItemRisk {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+model User {
+  id            String          @id @default(cuid())
+  name          String
+  email         String          @unique
+  passwordHash  String
+  role          UserRole
+  isActive      Boolean         @default(true)
+  createdAt     DateTime        @default(now())
+  ownedProjects Project[]       @relation("ProjectOwner")
+  memberships   ProjectMember[]
+  assignedItems Item[]          @relation("ItemAssignee")
+  reportedItems Item[]          @relation("ItemReporter")
+}
+
+model Project {
+  id          String          @id @default(cuid())
+  name        String
+  code        String          @unique
+  description String
+  status      ProjectStatus   @default(ACTIVE)
+  ownerId     String
+  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members     ProjectMember[]
+  items       Item[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+model ProjectMember {
+  projectId String
+  userId    String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+}
+
+model Item {
+  id            String       @id @default(cuid())
+  projectId     String
+  key           String       @unique
+  type          ItemType
+  title         String
+  description   String
+  status        ItemStatus   @default(OPEN)
+  priority      ItemPriority @default(P2)
+  risk          ItemRisk     @default(MEDIUM)
+  assigneeId    String?
+  reporterId    String
+  dueDate       DateTime?
+  estimateHours Int?
+  spentHours    Int          @default(0)
+  tags          String[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  closedAt      DateTime?
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee      User?        @relation("ItemAssignee", fields: [assigneeId], references: [id])
+  reporter      User         @relation("ItemReporter", fields: [reporterId], references: [id])
+
+  @@index([projectId])
+  @@index([assigneeId])
+  @@index([status])
+  @@index([dueDate])
+}

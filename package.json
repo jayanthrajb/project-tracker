@@ -1,0 +1,29 @@
+{
+  "name": "project-tracker",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": [
+    "apps/api",
+    "apps/web"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w @project-tracker/api\" \"npm run dev -w @project-tracker/web\"",
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "lint": "npm run lint --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "db:migrate": "npm run db:migrate -w @project-tracker/api",
+    "db:seed": "npm run db:seed -w @project-tracker/api",
+    "db:reset": "npm run db:reset -w @project-tracker/api"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.36.0",
+    "concurrently": "^9.2.1",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "globals": "^16.4.0",
+    "prettier": "^3.6.2",
+    "typescript-eslint": "^8.44.1"
+  }
+}

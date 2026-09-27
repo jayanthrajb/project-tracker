@@ -1,0 +1,4 @@
+projectCode,title,description,type,status,priority,risk,assigneeEmail,reporterEmail,dueDate,estimateHours,spentHours,tags
+APP,Stabilize dashboard filters,Fix card filtering edge cases,TASK,IN_PROGRESS,P1,MEDIUM,ava@example.com,sara.manager@example.com,2026-10-02,6,2,"dashboard,frontend"
+OPS,Investigate flaky deployment,Pipeline fails intermittently,BUG,BLOCKED,P0,HIGH,noah@example.com,sara.manager@example.com,2026-09-29,8,3,"ci,backend"
+CRM,Review onboarding copy,Make empty states clearer,ENHANCEMENT,OPEN,P2,LOW,,sara.manager@example.com,2026-10-05,3,0,"ux,copy"
