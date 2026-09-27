@@ -9,9 +9,5 @@ export function formatDate(value: string | null) {
 
 export function toDateInput(value: string | null) {
   if (!value) return '';
-  const date = new Date(value);
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  return value.slice(0, 10);
 }

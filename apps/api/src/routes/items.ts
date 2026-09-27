@@ -5,7 +5,7 @@ import Papa from 'papaparse';
 import { z } from 'zod';
 
 import { AppError } from '../lib/errors.js';
-import { asyncHandler } from '../lib/http.js';
+import { asyncHandler, parseJsonField } from '../lib/http.js';
 import { buildItemWhere, sortItems } from '../lib/item-filters.js';
 import { prisma } from '../lib/prisma.js';
 import { calculateItemScore } from '../lib/score.js';
@@ -101,7 +101,7 @@ function normalizeQueryArray(value?: string | string[]) {
   return Array.isArray(value) ? value : value.split(',').filter(Boolean);
 }
 
-async function listItems(rawQuery: unknown) {
+async function listItems(rawQuery: unknown, options?: { exportAll?: boolean }) {
   const query = querySchema.parse(rawQuery);
   const filters = {
     projectId: query.projectId,
@@ -119,7 +119,7 @@ async function listItems(rawQuery: unknown) {
   const enriched = rows.map((item) => ({ ...item, score: calculateItemScore(item) }));
   const sorted = sortItems(enriched, query.sort);
   const start = (query.page - 1) * query.pageSize;
-  const paged = sorted.slice(start, start + query.pageSize);
+  const paged = options?.exportAll ? sorted : sorted.slice(start, start + query.pageSize);
 
   return {
     items: paged,
@@ -174,6 +174,11 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
     throw new AppError(403, 'You cannot edit this item');
   }
 
+  const nextProjectId = input.projectId ?? existing.projectId;
+  const nextReporterId = input.reporterId ?? existing.reporterId;
+  const nextAssigneeId = input.assigneeId === undefined ? existing.assigneeId : input.assigneeId;
+  await assertCanCreateItem(req.user, nextProjectId, nextReporterId, nextAssigneeId);
+
   const item = await prisma.item.update({
     where: { id: itemId },
     data: {
@@ -215,21 +220,32 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
     throw new AppError(400, 'CSV file is required');
   }
 
-  const mapping = req.body.mapping ? JSON.parse(req.body.mapping) : undefined;
+  const mapping = req.body.mapping
+    ? parseJsonField(req.body.mapping, z.record(z.string(), z.string()), 'mapping')
+    : undefined;
   const parsed = parseCsvRows(req.file.buffer.toString('utf-8'));
   const normalized = normalizeImportRows(parsed.data, mapping);
   const errors = normalized.filter((entry) => entry.errors.length > 0).map((entry) => ({ row: entry.index + 2, errors: entry.errors }));
+  const validRows = normalized.flatMap((entry) => (entry.data ? [entry.data] : []));
+  const projectCodes = Array.from(new Set(validRows.map((row) => row.projectCode)));
+  const userEmails = Array.from(
+    new Set(validRows.flatMap((row) => [row.reporterEmail, row.assigneeEmail].filter(Boolean) as string[])),
+  );
+  const [projects, users] = await Promise.all([
+    prisma.project.findMany({ where: { code: { in: projectCodes } } }),
+    prisma.user.findMany({ where: { email: { in: userEmails } } }),
+  ]);
+  const projectMap = new Map(projects.map((project) => [project.code, project]));
+  const userMap = new Map(users.map((user) => [user.email, user]));
 
   const created = [];
   for (const entry of normalized) {
     const data = entry.data;
     if (!data) continue;
 
-    const [project, assignee, reporter] = await Promise.all([
-      prisma.project.findUnique({ where: { code: data.projectCode } }),
-      data.assigneeEmail ? prisma.user.findUnique({ where: { email: data.assigneeEmail } }) : Promise.resolve(null),
-      prisma.user.findUnique({ where: { email: data.reporterEmail } }),
-    ]);
+    const project = projectMap.get(data.projectCode) ?? null;
+    const assignee = data.assigneeEmail ? (userMap.get(data.assigneeEmail) ?? null) : null;
+    const reporter = userMap.get(data.reporterEmail) ?? null;
 
     if (!project || !reporter || (data.assigneeEmail && !assignee)) {
       errors.push({
@@ -273,7 +289,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
 }));
 
 itemsRouter.get('/export', asyncHandler(async (req, res) => {
-  const result = await listItems(req.query);
+  const result = await listItems(req.query, { exportAll: true });
   const csv = Papa.unparse(result.items.map((item) => ({
     key: item.key,
     projectCode: item.project.code,

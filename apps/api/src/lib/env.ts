@@ -1,8 +1,14 @@
 import dotenv from 'dotenv';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { z } from 'zod';
 
-dotenv.config({ path: path.resolve(process.cwd(), '../../.env') });
+dotenv.config();
+
+if (!process.env.DATABASE_URL) {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  dotenv.config({ path: path.resolve(currentDir, '../../../.env') });
+}
 
 const envSchema = z.object({
   DATABASE_URL: z.string().min(1),

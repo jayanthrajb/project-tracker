@@ -38,7 +38,7 @@ export function LoginPage() {
         <div className="mt-6 grid gap-4">
           <label className="grid gap-1 text-sm"><span>Email</span><input className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('email')} /></label>
           <label className="grid gap-1 text-sm"><span>Password</span><input type="password" className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('password')} /></label>
-          <button className="rounded-lg bg-slate-900 px-4 py-2 text-white">Login</button>
+          <button disabled={mutation.isPending} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-60">{mutation.isPending ? 'Signing in…' : 'Login'}</button>
         </div>
         <p className="mt-4 text-sm text-slate-500">No account? <Link className="text-slate-900 underline" to="/register">Register</Link></p>
       </form>

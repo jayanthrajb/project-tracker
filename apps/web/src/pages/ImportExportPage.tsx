@@ -3,8 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import Papa from 'papaparse';
 import { toast } from 'react-hot-toast';
 
-import { api } from '../lib/api';
-import type { ApiError } from '../lib/api';
+import { api, ApiError } from '../lib/api';
 import type { Project, User } from '../types';
 
 const targets = ['projectCode', 'title', 'description', 'type', 'status', 'priority', 'risk', 'assigneeEmail', 'reporterEmail', 'dueDate', 'estimateHours', 'spentHours', 'tags'];
@@ -34,6 +33,27 @@ export function ImportExportPage() {
       await queryClient.invalidateQueries({ queryKey: ['items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success(`Imported ${data.createdCount} rows`);
+    },
+    onError: (error: ApiError) => toast.error(error.message),
+  });
+  const exportMutation = useMutation({
+    mutationFn: async () => {
+      const baseUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
+      const response = await fetch(`${baseUrl}/items/export${exportQuery ? `?${exportQuery}` : ''}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        throw new ApiError('Export failed', response.status);
+      }
+      return response.blob();
+    },
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'items-export.csv';
+      link.click();
+      URL.revokeObjectURL(url);
     },
     onError: (error: ApiError) => toast.error(error.message),
   });
@@ -106,7 +126,7 @@ export function ImportExportPage() {
               {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
             <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.search} onChange={(event) => setExportFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search text" />
-            <a className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm text-white" href={`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'}/items/export${exportQuery ? `?${exportQuery}` : ''}`} target="_blank" rel="noreferrer">Export items</a>
+            <button onClick={() => exportMutation.mutate()} className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{exportMutation.isPending ? 'Exporting…' : 'Export items'}</button>
           </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5">

@@ -33,14 +33,14 @@ export function RegisterPage() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 p-4">
-      <form className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm" onSubmit={form.handleSubmit((values) => mutation.mutate(values))}>
+      <form className="w-full max-w-md rounded-2xl bg-white p-8 shadow-sm" onSubmit={form.handleSubmit((values) => mutation.mutate({ ...values, role: 'DEVELOPER' }))}>
         <h1 className="text-2xl font-semibold">Create account</h1>
         <div className="mt-6 grid gap-4">
           <label className="grid gap-1 text-sm"><span>Name</span><input className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('name')} /></label>
           <label className="grid gap-1 text-sm"><span>Email</span><input className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('email')} /></label>
           <label className="grid gap-1 text-sm"><span>Password</span><input type="password" className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('password')} /></label>
-          <label className="grid gap-1 text-sm"><span>Role</span><select className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('role')}><option>DEVELOPER</option><option>MANAGER</option><option>ADMIN</option></select></label>
-          <button className="rounded-lg bg-slate-900 px-4 py-2 text-white">Register</button>
+          <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">New self-registered accounts start as <strong>DEVELOPER</strong>.</p>
+          <button disabled={mutation.isPending} className="rounded-lg bg-slate-900 px-4 py-2 text-white disabled:opacity-60">{mutation.isPending ? 'Creating account…' : 'Register'}</button>
         </div>
         <p className="mt-4 text-sm text-slate-500">Already registered? <Link className="text-slate-900 underline" to="/login">Login</Link></p>
       </form>

@@ -36,11 +36,15 @@ dashboardRouter.get('/', asyncHandler(async (req, res) => {
   const needsAttention = active.filter((item) => !item.assigneeId || !item.dueDate);
   const stale = active.filter((item) => item.status === ItemStatus.IN_PROGRESS && item.updatedAt < staleThreshold);
   const myItems = req.user ? active.filter((item) => item.assigneeId === req.user?.id) : [];
+  const perProjectCounts = active.reduce<Record<string, number>>((acc, item) => {
+    acc[item.projectId] = (acc[item.projectId] ?? 0) + 1;
+    return acc;
+  }, {});
   const perProjectOpenCounts = projects.map((project) => ({
     id: project.id,
     name: project.name,
     code: project.code,
-    openCount: active.filter((item) => item.projectId === project.id).length,
+    openCount: perProjectCounts[project.id] ?? 0,
   }));
 
   res.json({

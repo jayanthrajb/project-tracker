@@ -12,7 +12,6 @@ const registerSchema = z.object({
   name: z.string().min(2),
   email: z.string().email(),
   password: z.string().min(8),
-  role: z.nativeEnum(UserRole).optional().default(UserRole.DEVELOPER),
 });
 
 const loginSchema = z.object({
@@ -35,7 +34,7 @@ authRouter.post('/register', asyncHandler(async (req, res) => {
       name: input.name,
       email: input.email,
       passwordHash: await hashPassword(input.password),
-      role: input.role,
+      role: UserRole.DEVELOPER,
     },
   });
 
