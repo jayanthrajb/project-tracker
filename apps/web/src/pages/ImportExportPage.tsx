@@ -16,6 +16,10 @@ export function ImportExportPage() {
   const [mapping, setMapping] = useState<Record<string, string>>({});
   const queryClient = useQueryClient();
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<{ projects: Project[]; users: User[] }>('/projects') });
+  const [exportFilters, setExportFilters] = useState({ projectId: '', status: '', search: '' });
+  const exportQuery = new URLSearchParams(
+    Object.entries(exportFilters).filter(([, value]) => value),
+  ).toString();
 
   const importMutation = useMutation({
     mutationFn: async () => {
@@ -92,7 +96,18 @@ export function ImportExportPage() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="text-2xl font-semibold">CSV export</h2>
           <p className="mt-2 text-sm text-slate-500">Download the current backlog as a CSV.</p>
-          <a className="mt-4 inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm text-white" href={`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'}/items/export`} target="_blank" rel="noreferrer">Export items</a>
+          <div className="mt-4 grid gap-3">
+            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.projectId} onChange={(event) => setExportFilters((current) => ({ ...current, projectId: event.target.value }))}>
+              <option value="">All projects</option>
+              {projects.data?.projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+            </select>
+            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.status} onChange={(event) => setExportFilters((current) => ({ ...current, status: event.target.value }))}>
+              <option value="">All statuses</option>
+              {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((status) => <option key={status} value={status}>{status}</option>)}
+            </select>
+            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.search} onChange={(event) => setExportFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search text" />
+            <a className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm text-white" href={`${import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api'}/items/export${exportQuery ? `?${exportQuery}` : ''}`} target="_blank" rel="noreferrer">Export items</a>
+          </div>
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-5">
           <h2 className="text-2xl font-semibold">Available projects</h2>

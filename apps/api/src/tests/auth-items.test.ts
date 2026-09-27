@@ -24,10 +24,10 @@ function createMockPrisma() {
     },
   ];
 
-  const project = { id: 'project-1', code: 'APP', name: 'App', description: 'App project', status: 'ACTIVE', ownerId: 'manager-1', createdAt: new Date(), updatedAt: new Date() };
+  const project = { id: 'project-1', code: 'APP', name: 'App', description: 'App project', status: 'ACTIVE', ownerId: 'manager-1', nextItemNum: 0, createdAt: new Date(), updatedAt: new Date() };
   const items: any[] = [];
 
-  return {
+  const prisma = {
     user: {
       findUnique: vi.fn(async ({ where }: any) => users.find((user) => user.id === where.id || user.email === where.email) ?? null),
       create: vi.fn(async ({ data }: any) => {
@@ -37,12 +37,25 @@ function createMockPrisma() {
       }),
     },
     project: {
+      update: vi.fn(async ({ where, data, select }: any) => {
+        if (where.id !== project.id) {
+          throw new Error('Project not found');
+        }
+        project.nextItemNum += data.nextItemNum.increment;
+        if (select) {
+          return { code: project.code, nextItemNum: project.nextItemNum };
+        }
+        return project;
+      }),
       findUnique: vi.fn(async ({ where, select }: any) => {
         const found = (where.id === project.id || where.code === project.code) ? project : null;
         if (!found) return null;
-        if (select?.code) return { code: found.code };
+        if (select?.code) return { code: found.code, nextItemNum: found.nextItemNum };
         return found;
       }),
+    },
+    projectMember: {
+      findUnique: vi.fn(async ({ where }: any) => where.projectId_userId.projectId === project.id ? { projectId: project.id, userId: where.projectId_userId.userId } : null),
     },
     item: {
       findMany: vi.fn(async ({ where, select }: any) => {
@@ -84,7 +97,16 @@ function createMockPrisma() {
         return removed;
       }),
     },
+    $transaction: vi.fn(async (callback: (tx: any) => Promise<any>) => callback(prisma)),
   };
+
+  return prisma;
+}
+
+function csrfFrom(setCookie: string[] | string | undefined) {
+  const values = Array.isArray(setCookie) ? setCookie : setCookie ? [setCookie] : [];
+  const token = values.find((value) => value.startsWith('project_tracker_csrf='))?.split(';')[0].split('=')[1];
+  return token ? decodeURIComponent(token) : '';
 }
 
 describe('auth and items routes', () => {
@@ -125,9 +147,10 @@ describe('auth and items routes', () => {
     const app = createApp();
     const agent = request.agent(app);
 
-    await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const loginResponse = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrfToken = csrfFrom(loginResponse.headers['set-cookie']);
 
-    const createResponse = await agent.post('/api/items').send({
+    const createResponse = await agent.post('/api/items').set('x-csrf-token', csrfToken).send({
       projectId: 'project-1',
       title: 'New item',
       description: 'Track something important',
@@ -146,7 +169,7 @@ describe('auth and items routes', () => {
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.item.key).toBe('APP-1');
 
-    const patchResponse = await agent.patch(`/api/items/${createResponse.body.item.id}`).send({
+    const patchResponse = await agent.patch(`/api/items/${createResponse.body.item.id}`).set('x-csrf-token', csrfToken).send({
       status: ItemStatus.BLOCKED,
       reporterId: 'manager-1',
       projectId: 'project-1',
@@ -165,7 +188,7 @@ describe('auth and items routes', () => {
     expect(patchResponse.status).toBe(200);
     expect(patchResponse.body.item.status).toBe(ItemStatus.BLOCKED);
 
-    const deleteResponse = await agent.delete(`/api/items/${createResponse.body.item.id}`);
+    const deleteResponse = await agent.delete(`/api/items/${createResponse.body.item.id}`).set('x-csrf-token', csrfToken);
     expect(deleteResponse.status).toBe(204);
   });
 
@@ -178,8 +201,9 @@ describe('auth and items routes', () => {
     const managerAgent = request.agent(app);
     const developerAgent = request.agent(app);
 
-    await managerAgent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
-    const createResponse = await managerAgent.post('/api/items').send({
+    const managerLogin = await managerAgent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const managerCsrf = csrfFrom(managerLogin.headers['set-cookie']);
+    const createResponse = await managerAgent.post('/api/items').set('x-csrf-token', managerCsrf).send({
       projectId: 'project-1',
       title: 'Manager-owned item',
       description: 'Protected item',
@@ -195,8 +219,9 @@ describe('auth and items routes', () => {
       tags: [],
     });
 
-    await developerAgent.post('/api/auth/login').send({ email: 'ava@example.com', password: 'Password123!' });
-    const patchResponse = await developerAgent.patch(`/api/items/${createResponse.body.item.id}`).send({ status: ItemStatus.DONE });
+    const developerLogin = await developerAgent.post('/api/auth/login').send({ email: 'ava@example.com', password: 'Password123!' });
+    const developerCsrf = csrfFrom(developerLogin.headers['set-cookie']);
+    const patchResponse = await developerAgent.patch(`/api/items/${createResponse.body.item.id}`).set('x-csrf-token', developerCsrf).send({ status: ItemStatus.DONE });
 
     expect(patchResponse.status).toBe(403);
   });

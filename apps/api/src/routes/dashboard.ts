@@ -18,15 +18,7 @@ dashboardRouter.get('/', asyncHandler(async (req, res) => {
         reporter: { select: { id: true, name: true, email: true } },
       },
     }),
-    prisma.project.findMany({
-      include: {
-        _count: {
-          select: {
-            items: true,
-          },
-        },
-      },
-    }),
+    prisma.project.findMany(),
   ]);
 
   const now = new Date();

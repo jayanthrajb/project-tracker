@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { UserRole } from '@prisma/client';
 import { z } from 'zod';
 
-import { AUTH_COOKIE_NAME, authCookieOptions, comparePassword, hashPassword, signToken } from '../lib/auth.js';
+import { AUTH_COOKIE_NAME, CSRF_COOKIE_NAME, authCookieOptions, comparePassword, createCsrfToken, csrfCookieOptions, hashPassword, signToken } from '../lib/auth.js';
 import { AppError } from '../lib/errors.js';
 import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
@@ -40,7 +40,9 @@ authRouter.post('/register', asyncHandler(async (req, res) => {
   });
 
   const token = signToken({ userId: user.id, role: user.role });
+  const csrfToken = createCsrfToken();
   res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
   res.status(201).json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 }));
 
@@ -53,12 +55,15 @@ authRouter.post('/login', asyncHandler(async (req, res) => {
   }
 
   const token = signToken({ userId: user.id, role: user.role });
+  const csrfToken = createCsrfToken();
   res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
+  res.cookie(CSRF_COOKIE_NAME, csrfToken, csrfCookieOptions());
   res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 }));
 
 authRouter.post('/logout', (_req, res) => {
   res.clearCookie(AUTH_COOKIE_NAME, authCookieOptions());
+  res.clearCookie(CSRF_COOKIE_NAME, csrfCookieOptions());
   res.status(204).send();
 });
 

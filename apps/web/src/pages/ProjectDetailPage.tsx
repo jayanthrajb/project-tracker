@@ -65,6 +65,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
 
   const users = projects.data?.users ?? [];
   const filteredItems = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
+  const canCreateItems = user.role !== 'DEVELOPER' || projectQuery.data?.project.members.some((member) => member.user.id === user.id);
 
   if (projectQuery.isLoading || projects.isLoading || itemsQuery.isLoading) return <div>Loading project…</div>;
   const project = projectQuery.data?.project;
@@ -86,7 +87,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
               {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((option) => <option key={option}>{option}</option>)}
             </select>
             <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => setView(view === 'table' ? 'board' : 'table')}>{view === 'table' ? 'Board view' : 'Table view'}</button>
-            <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white" onClick={() => setCreating(true)}>New item</button>
+            {canCreateItems && <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white" onClick={() => setCreating(true)}>New item</button>}
           </div>
         </div>
       </div>

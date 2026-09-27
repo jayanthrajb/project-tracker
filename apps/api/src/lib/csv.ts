@@ -12,7 +12,12 @@ const rowSchema = z.object({
   risk: z.nativeEnum(ItemRisk).default(ItemRisk.MEDIUM),
   assigneeEmail: z.string().email().optional().or(z.literal('')).transform((value) => value || undefined),
   reporterEmail: z.string().email(),
-  dueDate: z.string().optional().or(z.literal('')).transform((value) => value || undefined),
+  dueDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected YYYY-MM-DD date')
+    .optional()
+    .or(z.literal(''))
+    .transform((value) => value || undefined),
   estimateHours: z.coerce.number().optional(),
   spentHours: z.coerce.number().optional().default(0),
   tags: z.string().optional().default(''),

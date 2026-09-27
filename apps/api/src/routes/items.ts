@@ -1,4 +1,4 @@
-import { ItemPriority, ItemRisk, ItemStatus, ItemType } from '@prisma/client';
+import { ItemPriority, ItemRisk, ItemStatus, ItemType, UserRole } from '@prisma/client';
 import { Router } from 'express';
 import multer from 'multer';
 import Papa from 'papaparse';
@@ -54,17 +54,46 @@ const itemInclude = {
   reporter: { select: { id: true, name: true, email: true, role: true } },
 };
 
-async function nextItemKey(projectId: string) {
-  const project = await prisma.project.findUnique({ where: { id: projectId }, select: { code: true } });
+async function nextItemKey(tx: typeof prisma, projectId: string) {
+  const project = await tx.project.update({
+    where: { id: projectId },
+    data: { nextItemNum: { increment: 1 } },
+    select: { code: true, nextItemNum: true },
+  });
   if (!project) throw new AppError(404, 'Project not found');
+  return `${project.code}-${project.nextItemNum}`;
+}
 
-  const keys = await prisma.item.findMany({ where: { projectId }, select: { key: true } });
-  const current = keys.reduce((max, item) => {
-    const value = Number(item.key.split('-')[1] ?? 0);
-    return Math.max(max, value);
-  }, 0);
+async function assertCanCreateItem(
+  user: { id: string; role: UserRole },
+  projectId: string,
+  reporterId: string,
+  assigneeId: string | null | undefined,
+) {
+  if (user.role === UserRole.ADMIN || user.role === UserRole.MANAGER) {
+    return;
+  }
 
-  return `${project.code}-${current + 1}`;
+  const membership = await prisma.projectMember.findUnique({
+    where: {
+      projectId_userId: {
+        projectId,
+        userId: user.id,
+      },
+    },
+  });
+
+  if (!membership) {
+    throw new AppError(403, 'Developers can only create items in projects they belong to');
+  }
+
+  if (reporterId !== user.id) {
+    throw new AppError(403, 'Developers can only report items as themselves');
+  }
+
+  if (assigneeId && assigneeId !== user.id) {
+    throw new AppError(403, 'Developers can only self-assign items they create');
+  }
 }
 
 function normalizeQueryArray(value?: string | string[]) {
@@ -106,26 +135,31 @@ itemsRouter.get('/', asyncHandler(async (req, res) => {
 
 itemsRouter.post('/', asyncHandler(async (req, res) => {
   const input = itemSchema.parse(req.body);
-  const key = await nextItemKey(input.projectId);
-  const item = await prisma.item.create({
-    data: {
-      projectId: input.projectId,
-      key,
-      type: input.type,
-      title: input.title,
-      description: input.description,
-      status: input.status,
-      priority: input.priority,
-      risk: input.risk,
-      assigneeId: input.assigneeId || null,
-      reporterId: input.reporterId,
-      dueDate: input.dueDate ? new Date(input.dueDate) : null,
-      estimateHours: input.estimateHours ?? null,
-      spentHours: input.spentHours,
-      tags: input.tags,
-      closedAt: input.status === ItemStatus.DONE ? new Date() : null,
-    },
-    include: itemInclude,
+  if (!req.user) throw new AppError(401, 'Authentication required');
+  await assertCanCreateItem(req.user, input.projectId, input.reporterId, input.assigneeId);
+
+  const item = await prisma.$transaction(async (tx) => {
+    const key = await nextItemKey(tx as typeof prisma, input.projectId);
+    return tx.item.create({
+      data: {
+        projectId: input.projectId,
+        key,
+        type: input.type,
+        title: input.title,
+        description: input.description,
+        status: input.status,
+        priority: input.priority,
+        risk: input.risk,
+        assigneeId: input.assigneeId || null,
+        reporterId: input.reporterId,
+        dueDate: input.dueDate ? new Date(input.dueDate) : null,
+        estimateHours: input.estimateHours ?? null,
+        spentHours: input.spentHours,
+        tags: input.tags,
+        closedAt: input.status === ItemStatus.DONE ? new Date() : null,
+      },
+      include: itemInclude,
+    });
   });
 
   res.status(201).json({ item: { ...item, score: calculateItemScore(item) } });
@@ -188,45 +222,49 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
 
   const created = [];
   for (const entry of normalized) {
-    if (!entry.data) continue;
+    const data = entry.data;
+    if (!data) continue;
 
     const [project, assignee, reporter] = await Promise.all([
-      prisma.project.findUnique({ where: { code: entry.data.projectCode } }),
-      entry.data.assigneeEmail ? prisma.user.findUnique({ where: { email: entry.data.assigneeEmail } }) : Promise.resolve(null),
-      prisma.user.findUnique({ where: { email: entry.data.reporterEmail } }),
+      prisma.project.findUnique({ where: { code: data.projectCode } }),
+      data.assigneeEmail ? prisma.user.findUnique({ where: { email: data.assigneeEmail } }) : Promise.resolve(null),
+      prisma.user.findUnique({ where: { email: data.reporterEmail } }),
     ]);
 
-    if (!project || !reporter || (entry.data.assigneeEmail && !assignee)) {
+    if (!project || !reporter || (data.assigneeEmail && !assignee)) {
       errors.push({
         row: entry.index + 2,
         errors: [
-          !project ? `projectCode: Unknown project ${entry.data.projectCode}` : '',
-          !reporter ? `reporterEmail: Unknown user ${entry.data.reporterEmail}` : '',
-          entry.data.assigneeEmail && !assignee ? `assigneeEmail: Unknown user ${entry.data.assigneeEmail}` : '',
+          !project ? `projectCode: Unknown project ${data.projectCode}` : '',
+          !reporter ? `reporterEmail: Unknown user ${data.reporterEmail}` : '',
+          data.assigneeEmail && !assignee ? `assigneeEmail: Unknown user ${data.assigneeEmail}` : '',
         ].filter(Boolean),
       });
       continue;
     }
 
-    const item = await prisma.item.create({
-      data: {
-        projectId: project.id,
-        key: await nextItemKey(project.id),
-        type: entry.data.type,
-        title: entry.data.title,
-        description: entry.data.description,
-        status: entry.data.status,
-        priority: entry.data.priority,
-        risk: entry.data.risk,
-        assigneeId: assignee?.id ?? null,
-        reporterId: reporter.id,
-        dueDate: entry.data.dueDate ? new Date(entry.data.dueDate) : null,
-        estimateHours: entry.data.estimateHours,
-        spentHours: entry.data.spentHours ?? 0,
-        tags: entry.data.tags ? entry.data.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
-        closedAt: entry.data.status === ItemStatus.DONE ? new Date() : null,
-      },
-      include: itemInclude,
+    const item = await prisma.$transaction(async (tx) => {
+      const key = await nextItemKey(tx as typeof prisma, project.id);
+      return tx.item.create({
+        data: {
+          projectId: project.id,
+          key,
+          type: data.type,
+          title: data.title,
+          description: data.description,
+          status: data.status,
+          priority: data.priority,
+          risk: data.risk,
+          assigneeId: assignee?.id ?? null,
+          reporterId: reporter.id,
+          dueDate: data.dueDate ? new Date(data.dueDate) : null,
+          estimateHours: data.estimateHours,
+          spentHours: data.spentHours ?? 0,
+          tags: data.tags ? data.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+          closedAt: data.status === ItemStatus.DONE ? new Date() : null,
+        },
+        include: itemInclude,
+      });
     });
     created.push({ ...item, score: calculateItemScore(item) });
   }

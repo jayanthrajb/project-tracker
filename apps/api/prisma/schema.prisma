@@ -68,6 +68,7 @@ model Project {
   code        String          @unique
   description String
   status      ProjectStatus   @default(ACTIVE)
+  nextItemNum Int             @default(0)
   ownerId     String
   owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
   members     ProjectMember[]

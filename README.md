@@ -93,15 +93,15 @@ All seeded users share the same password: `Password123!`
 | POST | `/api/auth/logout` | Clear auth cookie |
 | GET | `/api/auth/me` | Current session user |
 | GET | `/api/projects` | List projects and active users |
-| POST | `/api/projects` | Create a project |
+| POST | `/api/projects` | Create a project (`MANAGER` / `ADMIN`) |
 | GET | `/api/projects/:id` | Get project detail |
-| PATCH | `/api/projects/:id` | Update project metadata |
-| PATCH | `/api/projects/:id/members` | Replace project members |
-| DELETE | `/api/projects/:id` | Delete a project |
+| PATCH | `/api/projects/:id` | Update project metadata (`MANAGER` / `ADMIN`) |
+| PATCH | `/api/projects/:id/members` | Replace project members (`MANAGER` / `ADMIN`) |
+| DELETE | `/api/projects/:id` | Delete a project (`MANAGER` / `ADMIN`) |
 | GET | `/api/items` | List/filter items |
-| POST | `/api/items` | Create an item |
-| PATCH | `/api/items/:id` | Update an item |
-| DELETE | `/api/items/:id` | Delete an item |
+| POST | `/api/items` | Create an item (developers must be project members, report as themselves, and only self-assign or leave unassigned) |
+| PATCH | `/api/items/:id` | Update an item (developers only for items assigned to them or reported by them) |
+| DELETE | `/api/items/:id` | Delete an item (developers only for items assigned to them or reported by them) |
 | POST | `/api/items/import` | Import CSV items |
 | GET | `/api/items/export` | Export filtered items to CSV |
 | GET | `/api/dashboard` | Dashboard buckets and summary counts |

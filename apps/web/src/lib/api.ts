@@ -1,4 +1,5 @@
 const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:4000/api';
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
 export class ApiError extends Error {
   details?: unknown;
@@ -12,9 +13,18 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method?.toUpperCase() ?? 'GET';
+  const csrfToken = typeof document !== 'undefined'
+    ? document.cookie
+        .split('; ')
+        .find((entry) => entry.startsWith('project_tracker_csrf='))
+        ?.split('=')[1]
+    : undefined;
+
   const response = await fetch(`${API_URL}${path}`, {
     credentials: 'include',
     headers: {
+      ...(csrfToken && !SAFE_METHODS.has(method) ? { 'x-csrf-token': decodeURIComponent(csrfToken) } : {}),
       ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
       ...init?.headers,
     },
