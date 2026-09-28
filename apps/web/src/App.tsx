@@ -12,6 +12,7 @@ import { ProjectsPage } from './pages/ProjectsPage';
 import { ProjectDetailPage } from './pages/ProjectDetailPage';
 import { MyItemsPage } from './pages/MyItemsPage';
 import { ImportExportPage } from './pages/ImportExportPage';
+import { AdminUsersPage } from './pages/AdminUsersPage';
 import type { Project, User } from './types';
 
 function ProtectedLayout() {
@@ -95,6 +96,7 @@ function ProtectedLayout() {
             ['/projects', 'Projects'],
             ['/my-items', 'My Items'],
             ['/import-export', 'Import / Export'],
+            ...(currentUser.role === 'ADMIN' ? [['/admin/users', 'Admin Users']] : []),
           ].map(([to, label]) => (
             <NavLink key={to} to={to} end className={({ isActive }) => `rounded-full px-3 py-1.5 ${isActive ? 'bg-slate-900 text-white' : 'bg-slate-200 text-slate-700'}`}>
               {label}
@@ -109,6 +111,7 @@ function ProtectedLayout() {
           <Route path="/projects/:projectId" element={<ProjectDetailPage user={currentUser} />} />
           <Route path="/my-items" element={<MyItemsPage user={currentUser} />} />
           <Route path="/import-export" element={<ImportExportPage />} />
+          <Route path="/admin/users" element={<AdminUsersPage currentUser={currentUser} />} />
         </Routes>
       </main>
     </div>

@@ -49,7 +49,7 @@ authRouter.post('/login', asyncHandler(async (req, res) => {
   const input = loginSchema.parse(req.body);
   const user = await prisma.user.findUnique({ where: { email: input.email } });
 
-  if (!user || !(await comparePassword(input.password, user.passwordHash))) {
+  if (!user || !user.isActive || !(await comparePassword(input.password, user.passwordHash))) {
     throw new AppError(401, 'Invalid credentials');
   }
 
