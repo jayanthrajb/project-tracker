@@ -1,15 +1,68 @@
-services:
-  postgres:
-    image: postgres:16
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: project_tracker
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres-data:/var/lib/postgresql/data
+name: project-tracker
 
-volumes:
-  postgres-data:
+# Point DATABASE_URL at your own PostgreSQL instance. From inside these containers,
+# PostgreSQL on your host machine is reachable at host.docker.internal on macOS/Windows
+# and via the host-gateway mapping below on Linux (use ?schema=public in the URL).
+services:
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    command:
+      - sh
+      - -c
+      - |
+        until printf 'SELECT 1;' | npx prisma db execute --stdin --schema prisma/schema.prisma >/dev/null 2>&1; do
+          echo 'Waiting for database...'
+          sleep 2
+        done
+        npx prisma migrate deploy
+    restart: 'no'
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: ${PORT:-4000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - project-tracker
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      PORT: ${PORT:-4000}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+    expose:
+      - '4000'
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    networks:
+      - project-tracker
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        VITE_API_URL: /api
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      API_UPSTREAM: http://api:4000
+    ports:
+      - '8080:8080'
+    networks:
+      - project-tracker
+
+networks:
+  project-tracker:
+    driver: bridge
