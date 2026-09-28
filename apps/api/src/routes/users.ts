@@ -9,6 +9,7 @@ import { AppError } from '../lib/errors.js';
 import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
+import { rateLimit } from '../middleware/rate-limit.js';
 
 const listUsersQuerySchema = z.object({
   search: z.string().optional(),
@@ -54,6 +55,7 @@ const resetPasswordSchema = z.object({
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
+usersRouter.use(rateLimit({ windowMs: 60_000, max: 120 }));
 
 function createTemporaryPassword() {
   return crypto.randomBytes(9).toString('base64url');
