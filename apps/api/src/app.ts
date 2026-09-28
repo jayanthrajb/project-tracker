@@ -19,9 +19,9 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }));
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
+  app.use('/api', requireCsrf);
   app.use('/api', rateLimit({ windowMs: 60_000, max: 300 }));
   app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 30 }));
-  app.use('/api', requireCsrf);
 
   app.get('/api/health', (_req, res) => {
     res.json({ ok: true });

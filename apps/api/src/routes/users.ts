@@ -55,7 +55,8 @@ const resetPasswordSchema = z.object({
 
 export const usersRouter = Router();
 usersRouter.use(requireAuth);
-usersRouter.use(rateLimit({ windowMs: 60_000, max: 120 }));
+const usersReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const usersWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
 
 function createTemporaryPassword() {
   return crypto.randomBytes(9).toString('base64url');
@@ -97,7 +98,7 @@ function toFriendlyUserConflict(error: unknown) {
   throw error;
 }
 
-usersRouter.get('/', asyncHandler(async (req, res) => {
+usersRouter.get('/', usersReadRateLimit, asyncHandler(async (req, res) => {
   const query = listUsersQuerySchema.parse(req.query);
   const where: Prisma.UserWhereInput = {
     ...(query.role ? { role: query.role } : {}),
@@ -161,7 +162,7 @@ usersRouter.get('/', asyncHandler(async (req, res) => {
   res.json({ users: payload, total, page: query.page, pageSize: query.pageSize });
 }));
 
-usersRouter.post('/', requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
+usersRouter.post('/', usersWriteRateLimit, requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
   const input = createUserSchema.parse(req.body);
 
   const shouldGenerate = input.generateTemporaryPassword || !input.password;
@@ -196,7 +197,7 @@ usersRouter.post('/', requireRole(UserRole.ADMIN), asyncHandler(async (req, res)
   }
 }));
 
-usersRouter.patch('/:id', asyncHandler(async (req, res) => {
+usersRouter.patch('/:id', usersWriteRateLimit, asyncHandler(async (req, res) => {
   const userId = z.string().parse(req.params.id);
   if (!req.user) throw new AppError(401, 'Authentication required');
 
@@ -261,7 +262,7 @@ usersRouter.patch('/:id', asyncHandler(async (req, res) => {
   return res.json({ user });
 }));
 
-usersRouter.post('/:id/reset-password', requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
+usersRouter.post('/:id/reset-password', usersWriteRateLimit, requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
   const userId = z.string().parse(req.params.id);
   const input = resetPasswordSchema.parse(req.body);
 
@@ -284,7 +285,7 @@ usersRouter.post('/:id/reset-password', requireRole(UserRole.ADMIN), asyncHandle
   res.json({ temporaryPassword: shouldGenerate ? password : null, message: 'Password reset successful' });
 }));
 
-usersRouter.delete('/:id', requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
+usersRouter.delete('/:id', usersWriteRateLimit, requireRole(UserRole.ADMIN), asyncHandler(async (req, res) => {
   const userId = z.string().parse(req.params.id);
   if (!req.user) throw new AppError(401, 'Authentication required');
 
