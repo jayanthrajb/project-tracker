@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+
+  container-assets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: latest
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.23'
+      - run: docker build -f apps/api/Dockerfile -t project-tracker-api:test .
+      - run: docker build --build-arg VITE_API_URL=/api -f apps/web/Dockerfile -t project-tracker-web:test .
+      - run: kubectl kustomize k8s/ > /tmp/project-tracker-k8s.yaml
+      - run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.6.7
+      - run: "$(go env GOPATH)/bin/kubeconform" -strict -summary /tmp/project-tracker-k8s.yaml
