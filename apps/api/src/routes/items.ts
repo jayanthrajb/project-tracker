@@ -45,6 +45,26 @@ const querySchema = z.object({
   pageSize: z.coerce.number().default(25),
 });
 
+const bulkUpdateSchema = z.object({
+  updates: z.array(
+    z.object({
+      id: z.string().min(1),
+      type: z.nativeEnum(ItemType).optional(),
+      title: z.string().min(2).optional(),
+      description: z.string().optional(),
+      status: z.nativeEnum(ItemStatus).optional(),
+      priority: z.nativeEnum(ItemPriority).optional(),
+      risk: z.nativeEnum(ItemRisk).optional(),
+      assigneeId: z.string().nullable().optional(),
+      reporterId: z.string().min(1).optional(),
+      dueDate: z.string().nullable().optional(),
+      estimateHours: z.coerce.number().nullable().optional(),
+      spentHours: z.coerce.number().min(0).optional(),
+      tags: z.array(z.string()).optional(),
+    }),
+  ).min(1),
+});
+
 export const itemsRouter = Router();
 itemsRouter.use(requireAuth);
 
@@ -183,6 +203,67 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
   });
 
   res.status(201).json({ item: { ...item, score: calculateItemScore(item) } });
+}));
+
+itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
+  const input = bulkUpdateSchema.parse(req.body);
+  if (!req.user) throw new AppError(401, 'Authentication required');
+
+  const ids = input.updates.map((entry) => entry.id);
+  const existing = await prisma.item.findMany({ where: { id: { in: ids } } });
+  const byId = new Map(existing.map((item) => [item.id, item]));
+  const errors: Record<string, string> = {};
+
+  for (const update of input.updates) {
+    const item = byId.get(update.id);
+    if (!item) {
+      errors[update.id] = 'Item not found';
+      continue;
+    }
+    if (!canEditItem(req.user.id, req.user.role, item)) {
+      errors[update.id] = 'You cannot edit this item';
+      continue;
+    }
+
+    const nextProjectId = item.projectId;
+    const nextReporterId = update.reporterId ?? item.reporterId;
+    const nextAssigneeId = update.assigneeId === undefined ? item.assigneeId : update.assigneeId;
+    try {
+      await assertCanCreateItem(req.user, nextProjectId, nextReporterId, nextAssigneeId);
+    } catch (error) {
+      errors[update.id] = error instanceof AppError ? error.message : 'Invalid update';
+    }
+  }
+
+  if (Object.keys(errors).length > 0) {
+    throw new AppError(403, 'Bulk update rejected', { perItem: errors });
+  }
+
+  const updated = await prisma.$transaction(
+    input.updates.map((update) => prisma.item.update({
+      where: { id: update.id },
+      data: {
+        type: update.type,
+        title: update.title,
+        description: update.description,
+        status: update.status,
+        priority: update.priority,
+        risk: update.risk,
+        assigneeId: update.assigneeId === undefined ? undefined : update.assigneeId || null,
+        reporterId: update.reporterId,
+        dueDate: update.dueDate === undefined ? undefined : update.dueDate ? new Date(update.dueDate) : null,
+        estimateHours: update.estimateHours === undefined ? undefined : update.estimateHours,
+        spentHours: update.spentHours,
+        tags: update.tags,
+        closedAt: update.status ? (update.status === ItemStatus.DONE ? new Date() : null) : undefined,
+      },
+      include: itemInclude,
+    })),
+  );
+
+  res.json({
+    items: updated.map((item) => ({ ...item, score: calculateItemScore(item) })),
+  });
 }));
 
 itemsRouter.patch('/:id', asyncHandler(async (req, res) => {

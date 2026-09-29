@@ -38,9 +38,10 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 }
 
-export function requireRole(roles: UserRole[]) {
+export function requireRole(roles: UserRole | UserRole[]) {
+  const acceptedRoles = Array.isArray(roles) ? roles : [roles];
   return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    if (!req.user || !acceptedRoles.includes(req.user.role)) {
       return next(new AppError(403, 'Insufficient permissions'));
     }
     next();

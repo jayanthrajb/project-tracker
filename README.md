@@ -31,6 +31,7 @@ _Add screenshots here after the first local run._
    ```bash
    cp .env.example .env
    ```
+   Use the repo-root `.env` only. The API loads the root file automatically (and optionally `apps/api/.env` as an override if present).
 3. Start a local PostgreSQL container for dev mode:
    ```bash
    docker compose -f docker-compose.yml -f docker-compose.db.yml up -d postgres
@@ -84,6 +85,7 @@ All seeded users share the same password: `Password123!`
 | `npm run db:migrate` | Apply Prisma migrations |
 | `npm run db:seed` | Seed demo data |
 | `npm run db:reset` | Reset the database and reseed |
+| `npm run db:studio` | Open Prisma Studio with root `.env` |
 
 ## API endpoints
 
@@ -108,6 +110,12 @@ All seeded users share the same password: `Password123!`
 | POST | `/api/items/import` | Import CSV items |
 | GET | `/api/items/export` | Export filtered items to CSV |
 | GET | `/api/dashboard` | Dashboard buckets and summary counts |
+| GET | `/api/users` | List users (admins get expanded fields) |
+| POST | `/api/users` | Create a user (`ADMIN`) |
+| PATCH | `/api/users/:id` | Update a user (`ADMIN`), or self-update name/password |
+| POST | `/api/users/:id/reset-password` | Reset password (`ADMIN`) |
+| DELETE | `/api/users/:id` | Soft deactivate user (`ADMIN`) |
+| PATCH | `/api/items/bulk` | Atomic bulk item update with permission checks |
 
 ### Item list filters
 
