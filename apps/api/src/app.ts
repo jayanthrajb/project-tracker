@@ -3,6 +3,7 @@ import cors from 'cors';
 import express from 'express';
 
 import { env } from './lib/env.js';
+import { prisma } from './lib/prisma.js';
 import { requireCsrf } from './middleware/csrf.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { rateLimit } from './middleware/rate-limit.js';
@@ -20,12 +21,21 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use('/api', requireCsrf);
-  app.use('/api', rateLimit({ windowMs: 60_000, max: 300 }));
-  app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 30 }));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ status: 'ok' });
   });
+
+  app.get('/api/ready', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: 'ok' });
+    } catch {
+      res.status(503).json({ status: 'error' });
+    }
+  });
+  app.use('/api', rateLimit({ windowMs: 60_000, max: 300 }));
+  app.use('/api/auth', rateLimit({ windowMs: 60_000, max: 30 }));
 
   app.use('/api/auth', authRouter);
   app.use('/api/users', usersRouter);

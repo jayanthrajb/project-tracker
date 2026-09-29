@@ -1,0 +1,12 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+# This base applies long-lived resources only. Run k8s/migrate-job.yaml separately
+# after the namespace and Secret exist so repeat `kubectl apply -k k8s/` stays idempotent.
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - api-deployment.yaml
+  - web-deployment.yaml
+  - ingress.yaml
+  - hpa.yaml
+  # - postgres.yaml

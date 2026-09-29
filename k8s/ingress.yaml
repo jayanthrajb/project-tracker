@@ -1,0 +1,35 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: project-tracker
+  namespace: project-tracker
+  labels:
+    app.kubernetes.io/name: project-tracker
+    app.kubernetes.io/component: ingress
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 2m
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: project-tracker.example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: project-tracker-api
+                port:
+                  number: 4000
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: project-tracker-web
+                port:
+                  number: 8080
+  # tls:
+  #   - hosts:
+  #       - project-tracker.example.com
+  #     secretName: project-tracker-tls
