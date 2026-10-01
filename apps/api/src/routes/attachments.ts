@@ -11,6 +11,7 @@ import { canEditItem } from '../lib/permissions.js';
 import { prisma } from '../lib/prisma.js';
 import { localStorage as storage } from '../lib/storage/local.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -64,9 +65,10 @@ function sanitizeFilename(filename: string) {
 }
 
 export const attachmentsRouter = Router();
-attachmentsRouter.use(rateLimit({ windowMs: 60_000, max: 60 }), requireAuth);
+const attachmentReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const attachmentWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
 
-attachmentsRouter.post('/items/:id/attachments', upload.single('file'), asyncHandler(async (req, res) => {
+attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRateLimit, requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);
   if (!req.user) throw new AppError(401, 'Authentication required');
   if (!req.file) throw new AppError(400, 'An allowed file is required');
@@ -95,7 +97,7 @@ attachmentsRouter.post('/items/:id/attachments', upload.single('file'), asyncHan
   }
 }));
 
-attachmentsRouter.get('/attachments/:id', asyncHandler(async (req, res, next) => {
+attachmentsRouter.get('/attachments/:id', requireCsrf, attachmentReadRateLimit, requireAuth, asyncHandler(async (req, res, next) => {
   const { id } = idSchema.parse(req.params);
   emptyBodySchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -120,7 +122,7 @@ attachmentsRouter.get('/attachments/:id', asyncHandler(async (req, res, next) =>
   stream.pipe(res);
 }));
 
-attachmentsRouter.delete('/attachments/:id', asyncHandler(async (req, res) => {
+attachmentsRouter.delete('/attachments/:id', requireCsrf, attachmentWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');

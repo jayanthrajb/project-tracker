@@ -9,6 +9,7 @@ import { itemFiltersSchema } from '../lib/item-filters.js';
 import { canManageProjects } from '../lib/permissions.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
 const sortSchema = z.record(z.string(), z.json());
@@ -25,7 +26,8 @@ const idSchema = z.object({ id: z.string().min(1) });
 const emptyBodySchema = z.object({}).strict();
 
 export const viewsRouter = Router();
-viewsRouter.use(rateLimit({ windowMs: 60_000, max: 100 }), requireAuth);
+const viewReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const viewWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
 
 async function assertViewProjectAccess(
   projectId: string | null | undefined,
@@ -49,7 +51,7 @@ async function assertViewProjectAccess(
   if (!membership && !project) throw new AppError(403, 'You cannot share a view for this project');
 }
 
-viewsRouter.get('/views', asyncHandler(async (req, res) => {
+viewsRouter.get('/views', requireCsrf, viewReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   emptyBodySchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
   const memberships = await prisma.projectMember.findMany({
@@ -72,7 +74,7 @@ viewsRouter.get('/views', asyncHandler(async (req, res) => {
   res.json({ views });
 }));
 
-viewsRouter.post('/views', asyncHandler(async (req, res) => {
+viewsRouter.post('/views', requireCsrf, viewWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const input = createViewSchema.parse(req.body);
   if (!req.user) throw new AppError(401, 'Authentication required');
   if (input.scope === ViewScope.SHARED && input.projectId === undefined && !canManageProjects(req.user.role)) {
@@ -111,7 +113,7 @@ viewsRouter.post('/views', asyncHandler(async (req, res) => {
   res.status(201).json({ view });
 }));
 
-viewsRouter.patch('/views/:id', asyncHandler(async (req, res) => {
+viewsRouter.patch('/views/:id', requireCsrf, viewWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);
   const input = updateViewSchema.parse(req.body);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -147,7 +149,7 @@ viewsRouter.patch('/views/:id', asyncHandler(async (req, res) => {
   res.json({ view });
 }));
 
-viewsRouter.delete('/views/:id', asyncHandler(async (req, res) => {
+viewsRouter.delete('/views/:id', requireCsrf, viewWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -164,7 +166,7 @@ viewsRouter.delete('/views/:id', asyncHandler(async (req, res) => {
   res.status(204).send();
 }));
 
-viewsRouter.post('/views/:id/set-default', asyncHandler(async (req, res) => {
+viewsRouter.post('/views/:id/set-default', requireCsrf, viewWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');

@@ -10,6 +10,7 @@ import { resolveMentionedUsers } from '../lib/mentions.js';
 import { notifyCommentAdded, notifyMention } from '../lib/notifications.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
 const paginationSchema = z.object({
@@ -23,9 +24,10 @@ const commentSchema = z.object({
 const emptyBodySchema = z.object({}).strict();
 
 export const commentsRouter = Router();
-commentsRouter.use(rateLimit({ windowMs: 60_000, max: 120 }), requireAuth);
+const commentReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const commentWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
 
-commentsRouter.get('/items/:itemId/comments', asyncHandler(async (req, res) => {
+commentsRouter.get('/items/:itemId/comments', requireCsrf, commentReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const itemId = z.string().min(1).parse(req.params.itemId);
   const { page, pageSize } = paginationSchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -44,7 +46,7 @@ commentsRouter.get('/items/:itemId/comments', asyncHandler(async (req, res) => {
   res.json({ comments, total, page, pageSize });
 }));
 
-commentsRouter.post('/items/:itemId/comments', asyncHandler(async (req, res) => {
+commentsRouter.post('/items/:itemId/comments', requireCsrf, commentWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const itemId = z.string().min(1).parse(req.params.itemId);
   const input = commentSchema.parse(req.body);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -81,7 +83,7 @@ commentsRouter.post('/items/:itemId/comments', asyncHandler(async (req, res) => 
   res.status(201).json({ comment });
 }));
 
-commentsRouter.patch('/comments/:id', asyncHandler(async (req, res) => {
+commentsRouter.patch('/comments/:id', requireCsrf, commentWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const commentId = z.string().min(1).parse(req.params.id);
   const input = commentSchema.parse(req.body);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -96,7 +98,7 @@ commentsRouter.patch('/comments/:id', asyncHandler(async (req, res) => {
   res.json({ comment });
 }));
 
-commentsRouter.delete('/comments/:id', asyncHandler(async (req, res) => {
+commentsRouter.delete('/comments/:id', requireCsrf, commentWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const commentId = z.string().min(1).parse(req.params.id);
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');

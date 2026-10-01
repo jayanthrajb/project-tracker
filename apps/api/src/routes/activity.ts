@@ -6,6 +6,7 @@ import { AppError } from '../lib/errors.js';
 import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
 const paginationSchema = z.object({
@@ -14,9 +15,9 @@ const paginationSchema = z.object({
 });
 
 export const activityRouter = Router();
-activityRouter.use(rateLimit({ windowMs: 60_000, max: 120 }), requireAuth);
+const activityReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
 
-activityRouter.get('/items/:id/activity', asyncHandler(async (req, res) => {
+activityRouter.get('/items/:id/activity', requireCsrf, activityReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const itemId = z.string().min(1).parse(req.params.id);
   const { page, pageSize } = paginationSchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -35,7 +36,7 @@ activityRouter.get('/items/:id/activity', asyncHandler(async (req, res) => {
   res.json({ activity, total, page, pageSize });
 }));
 
-activityRouter.get('/projects/:id/activity', asyncHandler(async (req, res) => {
+activityRouter.get('/projects/:id/activity', requireCsrf, activityReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const projectId = z.string().min(1).parse(req.params.id);
   const { page, pageSize } = paginationSchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');

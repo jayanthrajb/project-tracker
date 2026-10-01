@@ -7,6 +7,7 @@ import { asyncHandler } from '../lib/http.js';
 import { deriveDueNotifications } from '../lib/notifications.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
+import { requireCsrf } from '../middleware/csrf.js';
 import { rateLimit } from '../middleware/rate-limit.js';
 
 const listSchema = z.object({
@@ -18,16 +19,17 @@ const paramsSchema = z.object({ id: z.string().min(1) });
 const emptyBodySchema = z.object({}).strict();
 
 export const notificationsRouter = Router();
-notificationsRouter.use(rateLimit({ windowMs: 60_000, max: 120 }), requireAuth);
+const notificationReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const notificationWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
 
-notificationsRouter.get('/notifications/unread-count', asyncHandler(async (req, res) => {
+notificationsRouter.get('/notifications/unread-count', requireCsrf, notificationReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   emptyBodySchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
   const count = await prisma.notification.count({ where: { userId: req.user.id, readAt: null } });
   res.json({ count });
 }));
 
-notificationsRouter.get('/notifications', asyncHandler(async (req, res) => {
+notificationsRouter.get('/notifications', requireCsrf, notificationReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { page, pageSize, unreadOnly } = listSchema.parse(req.query);
   if (!req.user) throw new AppError(401, 'Authentication required');
   const where = { userId: req.user.id, ...(unreadOnly ? { readAt: null } : {}) };
@@ -44,7 +46,7 @@ notificationsRouter.get('/notifications', asyncHandler(async (req, res) => {
   res.json({ notifications, total, page, pageSize });
 }));
 
-notificationsRouter.post('/notifications/read-all', asyncHandler(async (req, res) => {
+notificationsRouter.post('/notifications/read-all', requireCsrf, notificationWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');
   const result = await prisma.notification.updateMany({
@@ -54,7 +56,7 @@ notificationsRouter.post('/notifications/read-all', asyncHandler(async (req, res
   res.json({ updatedCount: result.count });
 }));
 
-notificationsRouter.post('/notifications/:id/read', asyncHandler(async (req, res) => {
+notificationsRouter.post('/notifications/:id/read', requireCsrf, notificationWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const { id } = paramsSchema.parse(req.params);
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user) throw new AppError(401, 'Authentication required');
@@ -66,7 +68,7 @@ notificationsRouter.post('/notifications/:id/read', asyncHandler(async (req, res
   res.json({ success: true });
 }));
 
-notificationsRouter.post('/notifications/scan', asyncHandler(async (req, res) => {
+notificationsRouter.post('/notifications/scan', requireCsrf, notificationWriteRateLimit, requireAuth, asyncHandler(async (req, res) => {
   emptyBodySchema.parse(req.body ?? {});
   if (!req.user || req.user.role !== UserRole.ADMIN) {
     throw new AppError(403, 'Only admins can scan due notifications');
