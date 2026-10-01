@@ -48,6 +48,32 @@ enum ItemRisk {
   HIGH
 }
 
+enum ActivityAction {
+  CREATED
+  UPDATED
+  STATUS_CHANGED
+  ASSIGNED
+  COMMENTED
+  DELETED
+  IMPORTED
+  BULK_UPDATED
+}
+
+enum NotificationType {
+  ASSIGNED
+  MENTIONED
+  STATUS_CHANGED
+  COMMENT
+  DUE_SOON
+  OVERDUE
+  BLOCKED
+}
+
+enum ViewScope {
+  PERSONAL
+  SHARED
+}
+
 model User {
   id            String          @id @default(cuid())
   name          String
@@ -60,21 +86,29 @@ model User {
   memberships   ProjectMember[]
   assignedItems Item[]          @relation("ItemAssignee")
   reportedItems Item[]          @relation("ItemReporter")
+  activityLogs  ActivityLog[]
+  comments      Comment[]
+  mentions      Mention[]
+  notifications Notification[]
+  savedViews    SavedView[]
+  attachments   Attachment[]
 }
 
 model Project {
-  id          String          @id @default(cuid())
-  name        String
-  code        String          @unique
-  description String
-  status      ProjectStatus   @default(ACTIVE)
-  nextItemNum Int             @default(0)
-  ownerId     String
-  owner       User            @relation("ProjectOwner", fields: [ownerId], references: [id])
-  members     ProjectMember[]
-  items       Item[]
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id           String          @id @default(cuid())
+  name         String
+  code         String          @unique
+  description  String
+  status       ProjectStatus   @default(ACTIVE)
+  nextItemNum  Int             @default(0)
+  ownerId      String
+  owner        User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members      ProjectMember[]
+  items        Item[]
+  activityLogs ActivityLog[]
+  savedViews   SavedView[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 }
 
 model ProjectMember {
@@ -87,30 +121,131 @@ model ProjectMember {
 }
 
 model Item {
-  id            String       @id @default(cuid())
+  id            String         @id @default(cuid())
   projectId     String
-  key           String       @unique
+  key           String         @unique
   type          ItemType
   title         String
   description   String
-  status        ItemStatus   @default(OPEN)
-  priority      ItemPriority @default(P2)
-  risk          ItemRisk     @default(MEDIUM)
+  status        ItemStatus     @default(OPEN)
+  priority      ItemPriority   @default(P2)
+  risk          ItemRisk       @default(MEDIUM)
   assigneeId    String?
   reporterId    String
   dueDate       DateTime?
   estimateHours Int?
-  spentHours    Int          @default(0)
+  spentHours    Int            @default(0)
   tags          String[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   closedAt      DateTime?
-  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignee      User?        @relation("ItemAssignee", fields: [assigneeId], references: [id])
-  reporter      User         @relation("ItemReporter", fields: [reporterId], references: [id])
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee      User?          @relation("ItemAssignee", fields: [assigneeId], references: [id])
+  reporter      User           @relation("ItemReporter", fields: [reporterId], references: [id])
+  activityLogs  ActivityLog[]
+  comments      Comment[]
+  notifications Notification[]
+  attachments   Attachment[]
 
   @@index([projectId])
   @@index([assigneeId])
   @@index([status])
   @@index([dueDate])
+}
+
+model ActivityLog {
+  id        String         @id @default(cuid())
+  itemId    String?
+  projectId String?
+  userId    String
+  action    ActivityAction
+  field     String?
+  oldValue  String?
+  newValue  String?
+  createdAt DateTime       @default(now())
+  item      Item?          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  project   Project?       @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
+  @@index([projectId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id        String    @id @default(cuid())
+  itemId    String
+  authorId  String
+  body      String    @db.Text
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  editedAt  DateTime?
+  item      Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  mentions  Mention[]
+
+  @@index([itemId])
+}
+
+model Mention {
+  id        String  @id @default(cuid())
+  commentId String
+  userId    String
+  comment   Comment @relation(fields: [commentId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([commentId, userId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  itemId    String?
+  type      NotificationType
+  title     String
+  body      String
+  readAt    DateTime?
+  dedupeKey String?
+  createdAt DateTime         @default(now())
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  item      Item?            @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@unique([userId, itemId, type, dedupeKey])
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model SavedView {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  scope       ViewScope
+  projectId   String?
+  filtersJson Json
+  sortJson    Json
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
+  @@index([scope, projectId])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  itemId     String
+  uploaderId String
+  filename   String
+  mimeType   String
+  sizeBytes  Int
+  storageKey String   @unique
+  createdAt  DateTime @default(now())
+  item       Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  uploader   User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+
+  @@index([itemId])
 }

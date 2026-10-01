@@ -26,10 +26,14 @@ function createMockPrisma() {
 
   const project = { id: 'project-1', code: 'APP', name: 'App', description: 'App project', status: 'ACTIVE', ownerId: 'manager-1', nextItemNum: 0, createdAt: new Date(), updatedAt: new Date() };
   const items: any[] = [];
+  const activityLogs: any[] = [];
+  const notifications: any[] = [];
 
   const prisma = {
     user: {
       findUnique: vi.fn(async ({ where }: any) => users.find((user) => user.id === where.id || user.email === where.email) ?? null),
+      findMany: vi.fn(async ({ where }: any = {}) => users.filter((user) =>
+        !where?.email?.in || where.email.in.includes(user.email))),
       create: vi.fn(async ({ data }: any) => {
         const user = { id: `user-${users.length + 1}`, isActive: true, createdAt: new Date(), ...data };
         users.push(user);
@@ -37,6 +41,9 @@ function createMockPrisma() {
       }),
     },
     project: {
+      findMany: vi.fn(async ({ where }: any = {}) => where?.code?.in
+        ? [project].filter((entry) => where.code.in.includes(entry.code))
+        : [project]),
       update: vi.fn(async ({ where, data, select }: any) => {
         if (where.id !== project.id) {
           throw new Error('Project not found');
@@ -57,8 +64,32 @@ function createMockPrisma() {
     projectMember: {
       findUnique: vi.fn(async ({ where }: any) => where.projectId_userId.projectId === project.id ? { projectId: project.id, userId: where.projectId_userId.userId } : null),
     },
+    activityLog: {
+      create: vi.fn(async ({ data }: any) => {
+        const entry = { id: `activity-${activityLogs.length + 1}`, createdAt: new Date(), ...data };
+        activityLogs.push(entry);
+        return entry;
+      }),
+      createMany: vi.fn(async ({ data }: any) => {
+        activityLogs.push(...data.map((entry: any) => ({ id: `activity-${activityLogs.length + 1}`, createdAt: new Date(), ...entry })));
+        return { count: data.length };
+      }),
+      findMany: vi.fn(async ({ where }: any) => activityLogs.filter((entry) => entry.itemId === where.itemId)),
+      count: vi.fn(async ({ where }: any) => activityLogs.filter((entry) => entry.itemId === where.itemId).length),
+    },
+    notification: {
+      create: vi.fn(async ({ data }: any) => {
+        const notification = { id: `notification-${notifications.length + 1}`, createdAt: new Date(), ...data };
+        notifications.push(notification);
+        return notification;
+      }),
+    },
+    attachment: {
+      findMany: vi.fn(async () => []),
+    },
     item: {
       findMany: vi.fn(async ({ where, select }: any) => {
+        if (where?.id?.in) return items.filter((item) => where.id.in.includes(item.id));
         const filtered = items.filter((item) => !where?.projectId || item.projectId === where.projectId);
         if (select?.key) return filtered.map((item) => ({ key: item.key }));
         return filtered;
@@ -82,11 +113,12 @@ function createMockPrisma() {
       findUnique: vi.fn(async ({ where }: any) => items.find((item) => item.id === where.id) ?? null),
       update: vi.fn(async ({ where, data }: any) => {
         const index = items.findIndex((item) => item.id === where.id);
+        const changes = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
         items[index] = {
           ...items[index],
-          ...data,
-          assignee: users.find((user) => user.id === (data.assigneeId ?? items[index].assigneeId)) ?? null,
-          reporter: users.find((user) => user.id === (data.reporterId ?? items[index].reporterId))!,
+          ...changes,
+          assignee: users.find((user) => user.id === (changes.assigneeId ?? items[index].assigneeId)) ?? null,
+          reporter: users.find((user) => user.id === (changes.reporterId ?? items[index].reporterId))!,
           updatedAt: new Date(),
         };
         return items[index];
@@ -100,7 +132,7 @@ function createMockPrisma() {
     $transaction: vi.fn(async (callback: (tx: any) => Promise<any>) => callback(prisma)),
   };
 
-  return prisma;
+  return Object.assign(prisma, { activityLogs, notifications });
 }
 
 function csrfFrom(setCookie: string[] | string | undefined) {
@@ -169,6 +201,8 @@ describe('auth and items routes', () => {
 
     expect(createResponse.status).toBe(201);
     expect(createResponse.body.item.key).toBe('APP-1');
+    expect(mockPrisma.activityLogs.some((entry: any) => entry.action === 'CREATED')).toBe(true);
+    expect(mockPrisma.notifications.some((entry: any) => entry.type === 'ASSIGNED' && entry.userId === 'dev-1')).toBe(true);
 
     const patchResponse = await agent.patch(`/api/items/${createResponse.body.item.id}`).set('x-csrf-token', csrfToken).send({
       status: ItemStatus.BLOCKED,
@@ -188,9 +222,42 @@ describe('auth and items routes', () => {
 
     expect(patchResponse.status).toBe(200);
     expect(patchResponse.body.item.status).toBe(ItemStatus.BLOCKED);
+    expect(mockPrisma.activityLogs.some((entry: any) => entry.action === 'STATUS_CHANGED' && entry.field === 'status')).toBe(true);
+    expect(mockPrisma.notifications.some((entry: any) => entry.type === 'STATUS_CHANGED' && entry.userId === 'dev-1')).toBe(true);
+
+    const bulkResponse = await agent.patch('/api/items/bulk').set('x-csrf-token', csrfToken).send({
+      updates: [{ id: createResponse.body.item.id, priority: ItemPriority.P3 }],
+    });
+    expect(bulkResponse.status).toBe(200);
+    expect(mockPrisma.activityLogs.some((entry: any) => entry.action === 'BULK_UPDATED' && entry.field === 'priority')).toBe(true);
 
     const deleteResponse = await agent.delete(`/api/items/${createResponse.body.item.id}`).set('x-csrf-token', csrfToken);
     expect(deleteResponse.status).toBe(204);
+    expect(mockPrisma.activityLogs.some((entry: any) => entry.action === 'DELETED' && entry.itemId === null)).toBe(true);
+  });
+
+  it('records imported items in the same transaction as CSV import', async () => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const app = createApp();
+    const agent = request.agent(app);
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrfToken = csrfFrom(login.headers['set-cookie']);
+    const response = await agent
+      .post('/api/items/import')
+      .set('x-csrf-token', csrfToken)
+      .attach('file', Buffer.from('projectCode,title,type,reporterEmail\nAPP,Imported item,TASK,sara.manager@example.com\n'), {
+        filename: 'items.csv',
+        contentType: 'text/csv',
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.createdCount).toBe(1);
+    expect(mockPrisma.activityLog.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ action: 'IMPORTED' }),
+    }));
   });
 
   it('blocks developers from editing items they do not own or report', async () => {

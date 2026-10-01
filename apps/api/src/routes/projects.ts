@@ -7,6 +7,7 @@ import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 import { canManageProjects } from '../lib/permissions.js';
 import { requireAuth } from '../middleware/auth.js';
+import { localStorage } from '../lib/storage/local.js';
 
 const projectSchema = z.object({
   name: z.string().min(2),
@@ -155,6 +156,11 @@ projectsRouter.delete('/:id', asyncHandler(async (req, res) => {
     throw new AppError(403, 'Only managers and admins can delete projects');
   }
 
+  const attachments = await prisma.attachment.findMany({
+    where: { item: { projectId } },
+    select: { storageKey: true },
+  });
   await prisma.project.delete({ where: { id: projectId } });
+  await Promise.all(attachments.map((attachment) => localStorage.delete(attachment.storageKey)));
   res.status(204).send();
 }));

@@ -1,26 +1,31 @@
-import { ItemStatus } from '@prisma/client';
+import { ItemPriority, ItemRisk, ItemStatus, ItemType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
+import { z } from 'zod';
 
-export interface ItemFilterInput {
-  projectId?: string;
-  assigneeId?: string;
-  statuses?: string[];
-  types?: string[];
-  priorities?: string[];
-  risks?: string[];
-  search?: string;
-  dueBefore?: string;
-}
+export const itemFiltersSchema = z.object({
+  projectId: z.string().min(1).optional(),
+  assigneeId: z.string().min(1).optional(),
+  unassigned: z.boolean().optional(),
+  statuses: z.array(z.nativeEnum(ItemStatus)).optional(),
+  types: z.array(z.nativeEnum(ItemType)).optional(),
+  priorities: z.array(z.nativeEnum(ItemPriority)).optional(),
+  risks: z.array(z.nativeEnum(ItemRisk)).optional(),
+  search: z.string().optional(),
+  dueBefore: z.union([z.iso.date(), z.iso.datetime({ offset: true })]).optional(),
+}).strict();
+
+export type ItemFilterInput = z.infer<typeof itemFiltersSchema>;
 
 export function buildItemWhere(filters: ItemFilterInput): Prisma.ItemWhereInput {
   const where: Prisma.ItemWhereInput = {};
 
   if (filters.projectId) where.projectId = filters.projectId;
-  if (filters.assigneeId) where.assigneeId = filters.assigneeId;
-  if (filters.statuses?.length) where.status = { in: filters.statuses as ItemStatus[] };
-  if (filters.types?.length) where.type = { in: filters.types as any };
-  if (filters.priorities?.length) where.priority = { in: filters.priorities as any };
-  if (filters.risks?.length) where.risk = { in: filters.risks as any };
+  if (filters.unassigned) where.assigneeId = null;
+  else if (filters.assigneeId) where.assigneeId = filters.assigneeId;
+  if (filters.statuses?.length) where.status = { in: filters.statuses };
+  if (filters.types?.length) where.type = { in: filters.types };
+  if (filters.priorities?.length) where.priority = { in: filters.priorities };
+  if (filters.risks?.length) where.risk = { in: filters.risks };
   if (filters.dueBefore) where.dueDate = { lte: new Date(filters.dueBefore) };
   if (filters.search) {
     where.OR = [

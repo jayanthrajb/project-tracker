@@ -40,6 +40,10 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       PORT: ${PORT:-4000}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
+      UPLOAD_DIR: ${UPLOAD_DIR:-/app/apps/api/uploads}
+      NOTIFICATION_SCAN_INTERVAL_MS: ${NOTIFICATION_SCAN_INTERVAL_MS:-900000}
+    volumes:
+      - uploads:${UPLOAD_DIR:-/app/apps/api/uploads}
     expose:
       - '4000'
     extra_hosts:
@@ -66,3 +70,6 @@ services:
 networks:
   project-tracker:
     driver: bridge
+
+volumes:
+  uploads:

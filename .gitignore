@@ -6,5 +6,6 @@ dist
 apps/api/generated
 apps/api/prisma/dev.db
 apps/web/.vite
+uploads/
 *.log
 .DS_Store

@@ -26,6 +26,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  UPLOAD_DIR: z.string().min(1).default('./uploads'),
+  NOTIFICATION_SCAN_INTERVAL_MS: z.coerce.number().int().min(0).default(15 * 60 * 1000),
 });
 
 export const env = envSchema.parse(process.env);
