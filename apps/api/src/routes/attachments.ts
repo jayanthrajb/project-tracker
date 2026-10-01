@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { ReadStream } from 'node:fs';
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
 import { z } from 'zod';
 
@@ -12,7 +13,6 @@ import { prisma } from '../lib/prisma.js';
 import { localStorage as storage } from '../lib/storage/local.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
-import { rateLimit } from '../middleware/rate-limit.js';
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const allowedMimeTypes = new Set([
@@ -65,8 +65,20 @@ function sanitizeFilename(filename: string) {
 }
 
 export const attachmentsRouter = Router();
-const attachmentReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
-const attachmentWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
+const attachmentReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
+const attachmentWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
 
 attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRateLimit, requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
   const { id } = idSchema.parse(req.params);

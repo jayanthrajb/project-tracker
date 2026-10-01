@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
 import { AppError } from '../lib/errors.js';
@@ -8,7 +9,6 @@ import { deriveDueNotifications } from '../lib/notifications.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
-import { rateLimit } from '../middleware/rate-limit.js';
 
 const listSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -19,8 +19,20 @@ const paramsSchema = z.object({ id: z.string().min(1) });
 const emptyBodySchema = z.object({}).strict();
 
 export const notificationsRouter = Router();
-const notificationReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
-const notificationWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
+const notificationReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
+const notificationWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
 
 notificationsRouter.get('/notifications/unread-count', requireCsrf, notificationReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   emptyBodySchema.parse(req.query);

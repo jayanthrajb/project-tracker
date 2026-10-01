@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
 import { assertProjectReadable, findAccessibleItem } from '../lib/access.js';
@@ -7,7 +8,6 @@ import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
-import { rateLimit } from '../middleware/rate-limit.js';
 
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -15,7 +15,13 @@ const paginationSchema = z.object({
 });
 
 export const activityRouter = Router();
-const activityReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
+const activityReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
 
 activityRouter.get('/items/:id/activity', requireCsrf, activityReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const itemId = z.string().min(1).parse(req.params.id);

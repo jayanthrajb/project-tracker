@@ -1,5 +1,6 @@
 import { UserRole } from '@prisma/client';
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
 import { findAccessibleItem } from '../lib/access.js';
@@ -11,7 +12,6 @@ import { notifyCommentAdded, notifyMention } from '../lib/notifications.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
-import { rateLimit } from '../middleware/rate-limit.js';
 
 const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -24,8 +24,20 @@ const commentSchema = z.object({
 const emptyBodySchema = z.object({}).strict();
 
 export const commentsRouter = Router();
-const commentReadRateLimit = rateLimit({ windowMs: 60_000, max: 120 });
-const commentWriteRateLimit = rateLimit({ windowMs: 60_000, max: 60 });
+const commentReadRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
+const commentWriteRateLimit = rateLimit({
+  windowMs: 60_000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+});
 
 commentsRouter.get('/items/:itemId/comments', requireCsrf, commentReadRateLimit, requireAuth, asyncHandler(async (req, res) => {
   const itemId = z.string().min(1).parse(req.params.itemId);
