@@ -1,4 +1,16 @@
-import { ItemPriority, ItemRisk, ItemStatus, ItemType, PrismaClient, ProjectStatus, UserRole } from '@prisma/client';
+import {
+  ActivityAction,
+  ItemPriority,
+  ItemRisk,
+  ItemStatus,
+  ItemType,
+  NotificationType,
+  PrismaClient,
+  ProjectStatus,
+  UserRole,
+  ViewScope,
+} from '@prisma/client';
+import type { Prisma } from '@prisma/client';
 
 import { hashPassword } from '../src/lib/auth.js';
 import '../src/lib/env.js';
@@ -42,6 +54,18 @@ async function main() {
   await prisma.projectMember.createMany({
     data: projects.flatMap((project) => users.map((user) => ({ projectId: project.id, userId: user.id }))),
   });
+  const seededItems: Array<{
+    id: string;
+    projectId: string;
+    key: string;
+    title: string;
+    status: ItemStatus;
+    assigneeId: string | null;
+    reporterId: string;
+    createdAt: Date;
+    updatedAt: Date;
+    closedAt: Date | null;
+  }> = [];
 
   const templates: Array<{
     title: string;
@@ -244,12 +268,16 @@ async function main() {
     },
   ];
 
+  let projectIndex = 0;
   for (const project of projects) {
     let sequence = 1;
     for (const template of templates) {
-      const createdAt = daysFromNow(-(sequence + 2)) ?? new Date();
+      const createdAt = daysFromNow(-(sequence * 6 + projectIndex * 2)) ?? new Date();
       const updatedAt = template.updatedDaysAgo ? daysFromNow(-template.updatedDaysAgo) ?? createdAt : daysFromNow(-(sequence % 4)) ?? createdAt;
-      await prisma.item.create({
+      const closedAt = template.status === ItemStatus.DONE
+        ? new Date(createdAt.getTime() + (updatedAt.getTime() - createdAt.getTime()) * 0.75)
+        : null;
+      const item = await prisma.item.create({
         data: {
           projectId: project.id,
           key: `${project.code}-${sequence}`,
@@ -267,11 +295,118 @@ async function main() {
           tags: template.tags,
           createdAt,
           updatedAt,
-          closedAt: template.status === ItemStatus.DONE ? updatedAt : null,
+          closedAt,
         },
       });
+      seededItems.push(item);
+      const statusPath = template.status === ItemStatus.OPEN
+        ? []
+        : template.status === ItemStatus.IN_PROGRESS
+          ? [ItemStatus.IN_PROGRESS]
+          : template.status === ItemStatus.IN_REVIEW
+            ? [ItemStatus.IN_PROGRESS, ItemStatus.IN_REVIEW]
+            : template.status === ItemStatus.BLOCKED
+              ? [ItemStatus.IN_PROGRESS, ItemStatus.BLOCKED]
+              : [ItemStatus.IN_PROGRESS, ItemStatus.DONE];
+      const history: Prisma.ActivityLogCreateManyInput[] = [{
+        itemId: item.id,
+        projectId: project.id,
+        userId: template.reporterId,
+        action: ActivityAction.CREATED,
+        field: null,
+        oldValue: null,
+        newValue: item.title,
+        createdAt,
+      }];
+      let oldStatus: ItemStatus = ItemStatus.OPEN;
+      const historyDuration = updatedAt.getTime() - createdAt.getTime();
+      statusPath.forEach((status, index) => {
+        history.push({
+          itemId: item.id,
+          projectId: project.id,
+          userId: template.reporterId,
+          action: ActivityAction.STATUS_CHANGED,
+          field: 'status',
+          oldValue: oldStatus,
+          newValue: status,
+          createdAt: new Date(createdAt.getTime() + historyDuration * ((index + 1) / (statusPath.length + 1))),
+        });
+        oldStatus = status;
+      });
+      await prisma.activityLog.createMany({ data: history });
       sequence += 1;
     }
+    projectIndex += 1;
+  }
+
+  for (const [index, item] of seededItems.slice(0, 8).entries()) {
+    const authorId = index % 2 === 0 ? manager.id : admin.id;
+    const mentionedUser = index % 2 === 0 ? ava : noah;
+    const body = index % 2 === 0
+      ? `Please review this update, @${mentionedUser.email.split('@')[0]}.`
+      : 'I added the investigation notes and next steps.';
+    const comment = await prisma.comment.create({
+      data: { itemId: item.id, authorId, body },
+    });
+    await prisma.activityLog.create({
+      data: {
+        itemId: item.id,
+        projectId: item.projectId,
+        userId: authorId,
+        action: ActivityAction.COMMENTED,
+        field: 'commentId',
+        newValue: comment.id,
+      },
+    });
+    if (index % 2 === 0) {
+      await prisma.mention.create({ data: { commentId: comment.id, userId: mentionedUser.id } });
+      await prisma.notification.create({
+        data: {
+          userId: mentionedUser.id,
+          itemId: item.id,
+          type: NotificationType.MENTIONED,
+          title: 'You were mentioned in a comment',
+          body: item.title,
+          readAt: index === 0 ? null : new Date(),
+        },
+      });
+    }
+  }
+
+  const assignedItems = seededItems.filter((item) => item.assigneeId && item.assigneeId !== item.reporterId);
+  for (const [index, item] of assignedItems.slice(0, 8).entries()) {
+    await prisma.notification.create({
+      data: {
+        userId: item.assigneeId!,
+        itemId: item.id,
+        type: NotificationType.ASSIGNED,
+        title: 'Item assigned to you',
+        body: item.title,
+        readAt: index % 2 === 0 ? new Date() : null,
+      },
+    });
+  }
+
+  const overdueDate = new Date();
+  overdueDate.setDate(overdueDate.getDate() - 1);
+  const viewTemplates: Array<{ name: string; filtersJson: Prisma.InputJsonValue; sortJson: Prisma.InputJsonValue }> = [
+    { name: 'My overdue', filtersJson: { assigneeId: manager.id, dueBefore: overdueDate.toISOString(), statuses: [ItemStatus.OPEN, ItemStatus.IN_PROGRESS, ItemStatus.BLOCKED, ItemStatus.IN_REVIEW] }, sortJson: { field: 'dueDate', direction: 'asc' } },
+    { name: 'P0/P1 open', filtersJson: { priorities: [ItemPriority.P0, ItemPriority.P1], statuses: [ItemStatus.OPEN, ItemStatus.IN_PROGRESS, ItemStatus.BLOCKED, ItemStatus.IN_REVIEW] }, sortJson: { field: 'priority', direction: 'asc' } },
+    { name: 'Blocked', filtersJson: { statuses: [ItemStatus.BLOCKED] }, sortJson: { field: 'updatedAt', direction: 'asc' } },
+    { name: 'Unassigned', filtersJson: { unassigned: true, statuses: [ItemStatus.OPEN, ItemStatus.IN_PROGRESS] }, sortJson: { field: 'priority', direction: 'asc' } },
+    { name: 'Stale in-progress', filtersJson: { statuses: [ItemStatus.IN_PROGRESS] }, sortJson: { field: 'updatedAt', direction: 'asc' } },
+  ];
+  for (const [index, view] of viewTemplates.entries()) {
+    await prisma.savedView.create({
+      data: {
+        userId: manager.id,
+        name: view.name,
+        scope: ViewScope.PERSONAL,
+        filtersJson: view.filtersJson,
+        sortJson: view.sortJson,
+        isDefault: index === 0,
+      },
+    });
   }
 
   console.log('Seed complete. Use any of the following credentials:');

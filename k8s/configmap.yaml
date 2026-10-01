@@ -11,3 +11,5 @@ data:
   NODE_ENV: production
   CORS_ORIGIN: https://project-tracker.example.com
   API_UPSTREAM: http://project-tracker-api:4000
+  UPLOAD_DIR: /app/apps/api/uploads
+  NOTIFICATION_SCAN_INTERVAL_MS: '900000'

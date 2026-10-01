@@ -195,6 +195,8 @@ Important notes:
 - `prisma migrate deploy` creates or updates the tables from `apps/api/prisma/migrations/`.
 - If PostgreSQL runs on your host machine and the app runs in Docker containers, use `host.docker.internal` instead of `localhost` inside `DATABASE_URL`.
 - On Linux, `docker-compose.yml` maps `host.docker.internal` to the host gateway for the API and migrate containers.
+- `UPLOAD_DIR` defaults to `./uploads` and stores attachment files. Docker Compose mounts a persistent volume at this path; Kubernetes mounts the `project-tracker-uploads` PVC.
+- `NOTIFICATION_SCAN_INTERVAL_MS` defaults to `900000` (15 minutes). Set it to `0` to disable periodic due/overdue notification scans; the scanner is disabled in tests.
 
 ### Docker Compose
 
@@ -301,14 +303,38 @@ kubectl port-forward -n project-tracker svc/project-tracker-api 4000:4000
 
 See [`k8s/README.md`](k8s/README.md) for more detail, including the optional demo Postgres manifest.
 
-## Phase 2 / Phase 3 roadmap
+## Phase 2 backend
 
-Not implemented in this phase:
+The API and database now support activity history, comments and @mentions, in-app notifications, saved views, and local file attachments. These models are additive to the Phase 1 schema: `ActivityLog`, `Comment`, `Mention`, `Notification`, `SavedView`, and `Attachment`. Apply them with the normal `prisma migrate deploy` workflow.
 
-- Comments
-- Activity log
-- In-app notifications / notification bell
+All endpoints below require authentication. Mutating requests use the existing CSRF cookie/header validation and API rate limiting. List routes accept `page` (default `1`) and `pageSize` (default `25`, maximum `100`).
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/items/:id/activity` | Newest-first item history |
+| GET | `/api/projects/:id/activity` | Newest-first project history |
+| GET | `/api/items/:itemId/comments` | Oldest-first paginated comments |
+| POST | `/api/items/:itemId/comments` | Add a comment; resolves `@email-local-part` and `@name-slug` mentions |
+| PATCH | `/api/comments/:id` | Edit your comment |
+| DELETE | `/api/comments/:id` | Delete your comment; ADMIN/MANAGER may delete any comment |
+| GET | `/api/notifications` | List your notifications; `unreadOnly=true` filters unread entries |
+| GET | `/api/notifications/unread-count` | Get your unread count |
+| POST | `/api/notifications/:id/read` | Mark one of your notifications read |
+| POST | `/api/notifications/read-all` | Mark all your notifications read |
+| POST | `/api/notifications/scan` | ADMIN-only due/overdue scan; safe to repeat |
+| GET | `/api/views` | List your personal and accessible shared views |
+| POST | `/api/views` | Create a saved view |
+| PATCH | `/api/views/:id` | Update a view you may edit |
+| DELETE | `/api/views/:id` | Delete a view you may edit |
+| POST | `/api/views/:id/set-default` | Set your default view |
+| POST | `/api/items/:id/attachments` | Upload one allowed file (maximum 10 MB) |
+| GET | `/api/attachments/:id` | Download an attachment after item access checks |
+| DELETE | `/api/attachments/:id` | Delete your attachment; ADMIN/MANAGER may delete any |
+
+Comments and item changes write history in the same database transaction as their mutations. Notifications are in-app only; no email or outbound notification channel is implemented. Attachment files are stored under `UPLOAD_DIR`.
+
+## Remaining roadmap
+
+- Phase 2 UI (comments, activity history, notification polling/bell, saved-view controls, attachments)
+- Phase 3 reports and charts
 - Daily digest email
-- Charts and reporting visuals
-- File attachments
-- Saved filters

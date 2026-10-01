@@ -5,6 +5,7 @@ kind: Kustomization
 resources:
   - namespace.yaml
   - configmap.yaml
+  - uploads-pvc.yaml
   - api-deployment.yaml
   - web-deployment.yaml
   - ingress.yaml

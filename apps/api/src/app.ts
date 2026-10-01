@@ -8,10 +8,15 @@ import { requireCsrf } from './middleware/csrf.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { rateLimit } from './middleware/rate-limit.js';
 import { authRouter } from './routes/auth.js';
+import { activityRouter } from './routes/activity.js';
+import { attachmentsRouter } from './routes/attachments.js';
+import { commentsRouter } from './routes/comments.js';
 import { dashboardRouter } from './routes/dashboard.js';
 import { itemsRouter } from './routes/items.js';
+import { notificationsRouter } from './routes/notifications.js';
 import { projectsRouter } from './routes/projects.js';
 import { usersRouter } from './routes/users.js';
+import { viewsRouter } from './routes/views.js';
 
 export function createApp() {
   const app = express();
@@ -42,6 +47,11 @@ export function createApp() {
   app.use('/api/projects', projectsRouter);
   app.use('/api/items', itemsRouter);
   app.use('/api/dashboard', dashboardRouter);
+  app.use('/api', activityRouter);
+  app.use('/api', commentsRouter);
+  app.use('/api', notificationsRouter);
+  app.use('/api', viewsRouter);
+  app.use('/api', attachmentsRouter);
 
   app.use(errorHandler);
 

@@ -28,6 +28,9 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+        - name: uploads
+          persistentVolumeClaim:
+            claimName: project-tracker-uploads
       initContainers:
         - name: wait-for-db
           image: postgres:16-alpine
@@ -108,6 +111,8 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: uploads
+              mountPath: /app/apps/api/uploads
 ---
 apiVersion: v1
 kind: Service

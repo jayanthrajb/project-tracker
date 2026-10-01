@@ -1,5 +1,6 @@
 import { createApp } from './app.js';
 import { env, envLoadMeta, getDatabaseConnectionMeta } from './lib/env.js';
+import { deriveDueNotifications } from './lib/notifications.js';
 
 const app = createApp();
 
@@ -9,3 +10,12 @@ app.listen(env.PORT, () => {
   console.log(`API listening on http://localhost:${env.PORT}`);
   console.log(`[env] loaded: ${loaded} | database: ${db.host}:${db.port}/${db.database}`);
 });
+
+if (env.NOTIFICATION_SCAN_INTERVAL_MS > 0 && env.NODE_ENV !== 'test') {
+  const scanner = setInterval(() => {
+    void deriveDueNotifications().catch((error: unknown) => {
+      console.error('Due notification scan failed', error);
+    });
+  }, env.NOTIFICATION_SCAN_INTERVAL_MS);
+  scanner.unref();
+}

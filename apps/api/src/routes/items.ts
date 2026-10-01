@@ -6,11 +6,14 @@ import { z } from 'zod';
 
 import { AppError } from '../lib/errors.js';
 import { asyncHandler, parseJsonField } from '../lib/http.js';
-import { buildItemWhere, sortItems } from '../lib/item-filters.js';
+import { buildItemWhere, itemFiltersSchema, sortItems } from '../lib/item-filters.js';
 import { prisma } from '../lib/prisma.js';
 import { calculateItemScore } from '../lib/score.js';
 import { normalizeImportRows, parseCsvRows } from '../lib/csv.js';
 import { canEditItem } from '../lib/permissions.js';
+import { recordItemChanges, recordItemCreation, recordItemDeletion } from '../lib/activity.js';
+import { notifyItemChanges, notifyItemCreated } from '../lib/notifications.js';
+import { localStorage } from '../lib/storage/local.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -34,6 +37,7 @@ const itemSchema = z.object({
 const querySchema = z.object({
   projectId: z.string().optional(),
   assigneeId: z.string().optional(),
+  unassigned: z.enum(['true', 'false']).optional().transform((value) => value === 'true'),
   status: z.union([z.string(), z.array(z.string())]).optional(),
   type: z.union([z.string(), z.array(z.string())]).optional(),
   priority: z.union([z.string(), z.array(z.string())]).optional(),
@@ -41,8 +45,8 @@ const querySchema = z.object({
   search: z.string().optional(),
   dueBefore: z.string().optional(),
   sort: z.string().optional(),
-  page: z.coerce.number().default(1),
-  pageSize: z.coerce.number().default(25),
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
 
 const bulkUpdateSchema = z.object({
@@ -143,16 +147,17 @@ function applyReadScope(baseWhere: Record<string, unknown>, user?: { id: string;
 
 async function listItems(rawQuery: unknown, user?: { id: string; role: UserRole }, options?: { exportAll?: boolean }) {
   const query = querySchema.parse(rawQuery);
-  const filters = {
+  const filters = itemFiltersSchema.parse({
     projectId: query.projectId,
     assigneeId: query.assigneeId,
+    unassigned: query.unassigned,
     statuses: normalizeQueryArray(query.status),
     types: normalizeQueryArray(query.type),
     priorities: normalizeQueryArray(query.priority),
     risks: normalizeQueryArray(query.risk),
     search: query.search,
     dueBefore: query.dueBefore,
-  };
+  });
 
   const where = applyReadScope(buildItemWhere(filters), user);
   const rows = await prisma.item.findMany({ where, include: itemInclude });
@@ -180,7 +185,7 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
 
   const item = await prisma.$transaction(async (tx) => {
     const key = await nextItemKey(tx as typeof prisma, input.projectId);
-    return tx.item.create({
+    const created = await tx.item.create({
       data: {
         projectId: input.projectId,
         key,
@@ -200,6 +205,9 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
       },
       include: itemInclude,
     });
+    await recordItemCreation(tx, { userId: req.user!.id, item: created });
+    await notifyItemCreated(tx, { actorId: req.user!.id, item: created });
+    return created;
   });
 
   res.status(201).json({ item: { ...item, score: calculateItemScore(item) } });
@@ -239,27 +247,36 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
     throw new AppError(403, 'Bulk update rejected', { perItem: errors });
   }
 
-  const updated = await prisma.$transaction(
-    input.updates.map((update) => prisma.item.update({
-      where: { id: update.id },
-      data: {
-        type: update.type,
-        title: update.title,
-        description: update.description,
-        status: update.status,
-        priority: update.priority,
-        risk: update.risk,
-        assigneeId: update.assigneeId === undefined ? undefined : update.assigneeId || null,
-        reporterId: update.reporterId,
-        dueDate: update.dueDate === undefined ? undefined : update.dueDate ? new Date(update.dueDate) : null,
-        estimateHours: update.estimateHours === undefined ? undefined : update.estimateHours,
-        spentHours: update.spentHours,
-        tags: update.tags,
-        closedAt: update.status ? (update.status === ItemStatus.DONE ? new Date() : null) : undefined,
-      },
-      include: itemInclude,
-    })),
-  );
+  const updated = await prisma.$transaction(async (tx) => {
+    const results = [];
+    for (const update of input.updates) {
+      const before = await tx.item.findUnique({ where: { id: update.id } });
+      if (!before) throw new AppError(404, 'Item not found');
+      const after = await tx.item.update({
+        where: { id: update.id },
+        data: {
+          type: update.type,
+          title: update.title,
+          description: update.description,
+          status: update.status,
+          priority: update.priority,
+          risk: update.risk,
+          assigneeId: update.assigneeId === undefined ? undefined : update.assigneeId || null,
+          reporterId: update.reporterId,
+          dueDate: update.dueDate === undefined ? undefined : update.dueDate ? new Date(update.dueDate) : null,
+          estimateHours: update.estimateHours === undefined ? undefined : update.estimateHours,
+          spentHours: update.spentHours,
+          tags: update.tags,
+          closedAt: update.status ? (update.status === ItemStatus.DONE ? new Date() : null) : undefined,
+        },
+        include: itemInclude,
+      });
+      await recordItemChanges(tx, { userId: req.user!.id, before, after, bulk: true });
+      await notifyItemChanges(tx, { actorId: req.user!.id, before, after });
+      results.push(after);
+    }
+    return results;
+  });
 
   res.json({
     items: updated.map((item) => ({ ...item, score: calculateItemScore(item) })),
@@ -283,25 +300,35 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
   const nextAssigneeId = input.assigneeId === undefined ? existing.assigneeId : input.assigneeId;
   await assertCanCreateItem(req.user, nextProjectId, nextReporterId, nextAssigneeId);
 
-  const item = await prisma.item.update({
-    where: { id: itemId },
-    data: {
-      projectId: input.projectId,
-      type: input.type,
-      title: input.title,
-      description: input.description,
-      status: input.status,
-      priority: input.priority,
-      risk: input.risk,
-      assigneeId: input.assigneeId === undefined ? undefined : input.assigneeId || null,
-      reporterId: input.reporterId,
-      dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
-      estimateHours: input.estimateHours === undefined ? undefined : input.estimateHours,
-      spentHours: input.spentHours,
-      tags: input.tags,
-      closedAt: input.status ? (input.status === ItemStatus.DONE ? new Date() : null) : undefined,
-    },
-    include: itemInclude,
+  const item = await prisma.$transaction(async (tx) => {
+    const before = await tx.item.findUnique({ where: { id: itemId } });
+    if (!before) throw new AppError(404, 'Item not found');
+    if (!canEditItem(req.user!.id, req.user!.role, before)) {
+      throw new AppError(403, 'You cannot edit this item');
+    }
+    const after = await tx.item.update({
+      where: { id: itemId },
+      data: {
+        projectId: input.projectId,
+        type: input.type,
+        title: input.title,
+        description: input.description,
+        status: input.status,
+        priority: input.priority,
+        risk: input.risk,
+        assigneeId: input.assigneeId === undefined ? undefined : input.assigneeId || null,
+        reporterId: input.reporterId,
+        dueDate: input.dueDate === undefined ? undefined : input.dueDate ? new Date(input.dueDate) : null,
+        estimateHours: input.estimateHours === undefined ? undefined : input.estimateHours,
+        spentHours: input.spentHours,
+        tags: input.tags,
+        closedAt: input.status ? (input.status === ItemStatus.DONE ? new Date() : null) : undefined,
+      },
+      include: itemInclude,
+    });
+    await recordItemChanges(tx, { userId: req.user!.id, before, after });
+    await notifyItemChanges(tx, { actorId: req.user!.id, before, after });
+    return after;
   });
 
   res.json({ item: { ...item, score: calculateItemScore(item) } });
@@ -315,7 +342,15 @@ itemsRouter.delete('/:id', asyncHandler(async (req, res) => {
     throw new AppError(403, 'You cannot delete this item');
   }
 
-  await prisma.item.delete({ where: { id: itemId } });
+  const attachments = await prisma.attachment.findMany({
+    where: { itemId },
+    select: { storageKey: true },
+  });
+  await prisma.$transaction((tx) => recordItemDeletion(tx, {
+    userId: req.user!.id,
+    item: existing,
+  }));
+  await Promise.all(attachments.map((attachment) => localStorage.delete(attachment.storageKey)));
   res.status(204).send();
 }));
 
@@ -367,7 +402,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
 
     const item = await prisma.$transaction(async (tx) => {
       const key = await nextItemKey(tx as typeof prisma, project.id);
-      return tx.item.create({
+      const imported = await tx.item.create({
         data: {
           projectId: project.id,
           key,
@@ -387,6 +422,9 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
         },
         include: itemInclude,
       });
+      await recordItemCreation(tx, { userId: req.user!.id, item: imported, imported: true });
+      await notifyItemCreated(tx, { actorId: req.user!.id, item: imported });
+      return imported;
     });
     created.push({ ...item, score: calculateItemScore(item) });
   }
