@@ -252,6 +252,9 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
     for (const update of input.updates) {
       const before = await tx.item.findUnique({ where: { id: update.id } });
       if (!before) throw new AppError(404, 'Item not found');
+      if (!canEditItem(req.user!.id, req.user!.role, before)) {
+        throw new AppError(403, 'You cannot edit this item');
+      }
       const after = await tx.item.update({
         where: { id: update.id },
         data: {

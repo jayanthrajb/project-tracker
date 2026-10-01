@@ -272,11 +272,18 @@ async function main() {
   for (const project of projects) {
     let sequence = 1;
     for (const template of templates) {
-      const createdAt = daysFromNow(-(sequence * 6 + projectIndex * 2)) ?? new Date();
-      const updatedAt = template.updatedDaysAgo ? daysFromNow(-template.updatedDaysAgo) ?? createdAt : daysFromNow(-(sequence % 4)) ?? createdAt;
-      const closedAt = template.status === ItemStatus.DONE
-        ? new Date(createdAt.getTime() + (updatedAt.getTime() - createdAt.getTime()) * 0.75)
+      const createdAt = daysFromNow(-(sequence * 7 + projectIndex * 2)) ?? new Date();
+      const completed = template.status === ItemStatus.DONE ||
+        (projectIndex === 0 && sequence === 3) ||
+        (projectIndex === 1 && sequence === 10) ||
+        (projectIndex === 2 && sequence === 13);
+      const currentStatus = completed ? ItemStatus.DONE : template.status;
+      const closedAt = completed
+        ? daysFromNow(-Math.max(1, sequence * 7 + projectIndex * 2 - 5))
         : null;
+      const updatedAt = closedAt ?? (template.updatedDaysAgo
+        ? daysFromNow(-template.updatedDaysAgo) ?? createdAt
+        : daysFromNow(-(sequence % 4)) ?? createdAt);
       const item = await prisma.item.create({
         data: {
           projectId: project.id,
@@ -284,7 +291,7 @@ async function main() {
           type: template.type,
           title: `${template.title} (${project.code})`,
           description: template.description,
-          status: template.status,
+          status: currentStatus,
           priority: template.priority,
           risk: template.risk,
           assigneeId: template.assigneeId,
@@ -299,13 +306,13 @@ async function main() {
         },
       });
       seededItems.push(item);
-      const statusPath = template.status === ItemStatus.OPEN
+      const statusPath = currentStatus === ItemStatus.OPEN
         ? []
-        : template.status === ItemStatus.IN_PROGRESS
+        : currentStatus === ItemStatus.IN_PROGRESS
           ? [ItemStatus.IN_PROGRESS]
-          : template.status === ItemStatus.IN_REVIEW
+          : currentStatus === ItemStatus.IN_REVIEW
             ? [ItemStatus.IN_PROGRESS, ItemStatus.IN_REVIEW]
-            : template.status === ItemStatus.BLOCKED
+            : currentStatus === ItemStatus.BLOCKED
               ? [ItemStatus.IN_PROGRESS, ItemStatus.BLOCKED]
               : [ItemStatus.IN_PROGRESS, ItemStatus.DONE];
       const history: Prisma.ActivityLogCreateManyInput[] = [{
@@ -329,7 +336,9 @@ async function main() {
           field: 'status',
           oldValue: oldStatus,
           newValue: status,
-          createdAt: new Date(createdAt.getTime() + historyDuration * ((index + 1) / (statusPath.length + 1))),
+          createdAt: index === statusPath.length - 1
+            ? updatedAt
+            : new Date(createdAt.getTime() + historyDuration * ((index + 1) / statusPath.length)),
         });
         oldStatus = status;
       });
