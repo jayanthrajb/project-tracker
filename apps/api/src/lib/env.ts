@@ -27,6 +27,15 @@ const envSchema = z.object({
   CORS_ORIGIN: z.string().default('http://localhost:5173'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   UPLOAD_DIR: z.string().min(1).default('./uploads'),
+  STORAGE_DRIVER: z.enum(['local', 's3']).default('local'),
+  S3_ENDPOINT: z.string().optional(),
+  S3_REGION: z.string().optional(),
+  S3_BUCKET: z.string().optional(),
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  S3_FORCE_PATH_STYLE: z.enum(['true', 'false']).default('true').transform((value) => value === 'true'),
+  S3_USE_PRESIGNED_URLS: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
+  S3_PUBLIC_URL: z.string().optional(),
   NOTIFICATION_SCAN_INTERVAL_MS: z.coerce.number().int().min(0).default(15 * 60 * 1000),
 });
 

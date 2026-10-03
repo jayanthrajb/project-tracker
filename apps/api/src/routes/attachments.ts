@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import type { ReadStream } from 'node:fs';
+import { createReadStream } from 'node:fs';
+import { rm } from 'node:fs/promises';
+import os from 'node:os';
+import type { Readable } from 'node:stream';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
 import multer from 'multer';
@@ -7,10 +10,13 @@ import { z } from 'zod';
 
 import { findAccessibleItem } from '../lib/access.js';
 import { AppError } from '../lib/errors.js';
+import { env } from '../lib/env.js';
 import { asyncHandler } from '../lib/http.js';
 import { canEditItem } from '../lib/permissions.js';
 import { prisma } from '../lib/prisma.js';
-import { localStorage as storage } from '../lib/storage/local.js';
+import { storage } from '../lib/storage/index.js';
+import { StorageObjectNotFoundError } from '../lib/storage/errors.js';
+import { createS3StorageKey, sanitizeFilename } from '../lib/storage/s3.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
 
@@ -35,7 +41,10 @@ const allowedMimeTypes = new Set([
 ]);
 
 const upload = multer({
-  storage: multer.memoryStorage(),
+  storage: multer.diskStorage({
+    destination: os.tmpdir(),
+    filename: (_req, _file, callback) => callback(null, randomUUID()),
+  }),
   limits: { fileSize: MAX_FILE_SIZE, files: 1 },
   fileFilter: (_req, file, callback) => {
     if (!allowedMimeTypes.has(file.mimetype.toLowerCase())) {
@@ -47,22 +56,6 @@ const upload = multer({
 });
 const idSchema = z.object({ id: z.string().min(1) });
 const emptyBodySchema = z.object({}).strict();
-
-function sanitizeFilename(filename: string) {
-  const basename = filename.replace(/\\/g, '/').split('/').pop() ?? '';
-  const sanitized = basename
-    .normalize('NFKC')
-    .split('')
-    .filter((character) => {
-      const code = character.charCodeAt(0);
-      return code >= 0x20 && code !== 0x7f;
-    })
-    .join('')
-    .replace(/[^A-Za-z0-9._ -]/g, '_')
-    .trim()
-    .slice(0, 180);
-  return sanitized && sanitized !== '.' && sanitized !== '..' ? sanitized : 'attachment';
-}
 
 export const attachmentsRouter = Router();
 const attachmentReadRateLimit = rateLimit({
@@ -81,31 +74,36 @@ const attachmentWriteRateLimit = rateLimit({
 });
 
 attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRateLimit, requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
-  const { id } = idSchema.parse(req.params);
-  if (!req.user) throw new AppError(401, 'Authentication required');
   if (!req.file) throw new AppError(400, 'An allowed file is required');
-  emptyBodySchema.parse(req.body ?? {});
-  const item = await findAccessibleItem(id, req.user);
-  if (!canEditItem(req.user.id, req.user.role, item)) {
-    throw new AppError(403, 'You cannot attach files to this item');
-  }
-  const storageKey = randomUUID();
-  await storage.save(storageKey, req.file.buffer);
+  const file = req.file;
   try {
-    const attachment = await prisma.attachment.create({
-      data: {
-        itemId: item.id,
-        uploaderId: req.user.id,
-        filename: sanitizeFilename(req.file.originalname),
-        mimeType: req.file.mimetype.toLowerCase(),
-        sizeBytes: req.file.size,
-        storageKey,
-      },
-    });
-    res.status(201).json({ attachment });
-  } catch (error) {
-    await storage.delete(storageKey).catch(() => undefined);
-    throw error;
+    const { id } = idSchema.parse(req.params);
+    if (!req.user) throw new AppError(401, 'Authentication required');
+    emptyBodySchema.parse(req.body ?? {});
+    const item = await findAccessibleItem(id, req.user);
+    if (!canEditItem(req.user.id, req.user.role, item)) {
+      throw new AppError(403, 'You cannot attach files to this item');
+    }
+    const storageKey = createS3StorageKey(item.id, file.originalname);
+    await storage.save(storageKey, createReadStream(file.path), file.size);
+    try {
+      const attachment = await prisma.attachment.create({
+        data: {
+          itemId: item.id,
+          uploaderId: req.user.id,
+          filename: sanitizeFilename(file.originalname),
+          mimeType: file.mimetype.toLowerCase(),
+          sizeBytes: file.size,
+          storageKey,
+        },
+      });
+      res.status(201).json({ attachment });
+    } catch (error) {
+      await storage.delete(storageKey).catch(() => undefined);
+      throw error;
+    }
+  } finally {
+    await rm(file.path, { force: true });
   }
 }));
 
@@ -116,11 +114,18 @@ attachmentsRouter.get('/attachments/:id', requireCsrf, attachmentReadRateLimit, 
   const attachment = await prisma.attachment.findUnique({ where: { id } });
   if (!attachment) throw new AppError(404, 'Attachment not found');
   await findAccessibleItem(attachment.itemId, req.user);
-  let stream: ReadStream;
+  if (env.S3_USE_PRESIGNED_URLS && storage.createPresignedDownloadUrl) {
+    return res.redirect(302, await storage.createPresignedDownloadUrl(attachment.storageKey));
+  }
+
+  let stream: Readable;
   try {
     stream = await storage.createReadStream(attachment.storageKey);
   } catch (error) {
-    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+    if (
+      error instanceof StorageObjectNotFoundError ||
+      (error instanceof Error && 'code' in error && error.code === 'ENOENT')
+    ) {
       throw new AppError(404, 'Attachment file not found');
     }
     throw error;

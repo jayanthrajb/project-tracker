@@ -1,6 +1,9 @@
 import { createReadStream } from 'node:fs';
-import { mkdir, realpath, unlink, writeFile } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
+import { access, mkdir, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
+import type { Readable } from 'node:stream';
 
 import type { StorageDriver } from './driver.js';
 
@@ -20,10 +23,10 @@ export class LocalStorageDriver implements StorageDriver {
     return resolved;
   }
 
-  async save(storageKey: string, content: Buffer) {
+  async save(storageKey: string, content: Readable, _sizeBytes: number) {
     const filePath = this.resolveKey(storageKey);
-    await mkdir(this.directory, { recursive: true });
-    await writeFile(filePath, content, { flag: 'wx', mode: 0o600 });
+    await mkdir(path.dirname(filePath), { recursive: true });
+    await pipeline(content, createWriteStream(filePath, { flags: 'wx', mode: 0o600 }));
   }
 
   async createReadStream(storageKey: string) {
@@ -47,6 +50,16 @@ export class LocalStorageDriver implements StorageDriver {
       await unlink(resolvedFilePath);
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return;
+      throw error;
+    }
+  }
+
+  async exists(storageKey: string) {
+    try {
+      await access(this.resolveKey(storageKey));
+      return true;
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;
       throw error;
     }
   }
