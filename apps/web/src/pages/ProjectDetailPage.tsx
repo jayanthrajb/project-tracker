@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -27,6 +27,8 @@ export function ProjectDetailPage({ user }: { user: User }) {
   const queryClient = useQueryClient();
   const search = searchParams.get('search') ?? '';
   const status = searchParams.get('status') ?? '';
+  const itemParam = searchParams.get('item');
+  const restoredItemParam = useRef(false);
 
   const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: () => api<{ project: Project }>(`/projects/${projectId}`) });
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<{ projects: Project[]; users: User[] }>('/projects') });
@@ -43,8 +45,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
       await queryClient.invalidateQueries({ queryKey: ['items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Item saved');
-      setActiveItem(undefined);
-      setCreating(false);
+      closeItemModal();
     },
     onError: (error: ApiError) => toast.error(error.message),
   });
@@ -79,6 +80,27 @@ export function ProjectDetailPage({ user }: { user: User }) {
   }, [freezeOrderWhileEditing]);
 
   const draftCount = Object.keys(drafts).length;
+
+  const openItem = (item: Item) => {
+    setActiveItem(item);
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params);
+      next.set('item', item.id);
+      next.delete('tab');
+      return next;
+    }, { replace: true });
+  };
+
+  function closeItemModal() {
+    setActiveItem(undefined);
+    setCreating(false);
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params);
+      next.delete('item');
+      next.delete('tab');
+      return next;
+    }, { replace: true });
+  }
 
   useEffect(() => {
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -120,6 +142,14 @@ export function ProjectDetailPage({ user }: { user: User }) {
 
   const users = projects.data?.users ?? [];
   const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
+
+  // Restore a deep-linked item (e.g. `?item=<id>&tab=comments`) once on load.
+  useEffect(() => {
+    if (restoredItemParam.current || !itemsQuery.data) return;
+    restoredItemParam.current = true;
+    const linked = itemParam ? itemsQuery.data.items.find((entry) => entry.id === itemParam) : undefined;
+    if (linked) setActiveItem(linked);
+  }, [itemParam, itemsQuery.data]);
   const mergedItems = useMemo(
     () => items.map((item) => ({ ...item, ...(drafts[item.id] ?? {}) })),
     [items, drafts],
@@ -300,11 +330,11 @@ export function ProjectDetailPage({ user }: { user: User }) {
                 return next;
               });
             }}
-            onOpen={setActiveItem}
+            onOpen={openItem}
           />
         </>
       ) : (
-        <ItemsBoard items={items} onDropStatus={(item, nextStatus) => quickUpdate.mutate({ item, patch: { status: nextStatus } })} onOpen={setActiveItem} />
+        <ItemsBoard items={items} onDropStatus={(item, nextStatus) => quickUpdate.mutate({ item, patch: { status: nextStatus } })} onOpen={openItem} />
       )}
 
       {draftCount > 0 && (
@@ -328,8 +358,8 @@ export function ProjectDetailPage({ user }: { user: User }) {
           projects={projects.data?.projects ?? []}
           users={users}
           defaultProjectId={projectId}
-          currentUserId={user.id}
-          onClose={() => { setActiveItem(undefined); setCreating(false); }}
+          currentUser={user}
+          onClose={closeItemModal}
           onSubmit={(values) => saveItem.mutate({ id: activeItem?.id, body: values })}
         />
       )}

@@ -72,3 +72,36 @@ export interface DashboardResponse {
   perProjectOpenCounts: { id: string; name: string; code: string; openCount: number }[];
   stale: Item[];
 }
+
+export interface CommentAuthor {
+  id: string;
+  name: string;
+  email?: string;
+}
+
+export interface ItemComment {
+  id: string;
+  itemId: string;
+  authorId: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+  editedAt: string | null;
+  author: CommentAuthor;
+  pending?: boolean;
+}
+
+export interface CommentsPage {
+  comments: ItemComment[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export interface MentionableUser {
+  id: string;
+  name: string;
+  email?: string;
+  role?: Role;
+  isActive?: boolean;
+}

@@ -16,3 +16,40 @@ body {
 * {
   box-sizing: border-box;
 }
+
+@layer components {
+  .comment-body {
+    @apply break-words text-sm leading-relaxed text-slate-800;
+  }
+  .comment-body p + p,
+  .comment-body pre,
+  .comment-body ul,
+  .comment-body ol,
+  .comment-body blockquote {
+    @apply mt-2;
+  }
+  .comment-body ul {
+    @apply list-disc pl-5;
+  }
+  .comment-body ol {
+    @apply list-decimal pl-5;
+  }
+  .comment-body blockquote {
+    @apply border-l-2 border-slate-300 pl-3 text-slate-600;
+  }
+  .comment-body a {
+    @apply text-sky-700 underline;
+  }
+  .comment-body code {
+    @apply rounded bg-slate-100 px-1 py-0.5 font-mono text-[0.8125rem];
+  }
+  .comment-body pre {
+    @apply overflow-x-auto rounded-lg bg-slate-900 p-3 text-slate-100;
+  }
+  .comment-body pre code {
+    @apply bg-transparent p-0 text-slate-100;
+  }
+  .comment-body .mention-chip {
+    @apply rounded-full bg-sky-100 px-1.5 py-0.5 text-xs font-medium text-sky-800;
+  }
+}
