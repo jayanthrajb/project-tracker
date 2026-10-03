@@ -59,7 +59,7 @@ To run the API against the local MinIO service instead, use Docker Compose with 
 docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.minio.yml up -d
 ```
 
-MinIO's S3 endpoint is <http://localhost:9000> and its console is <http://localhost:9001>. The default `minioadmin` / `minioadmin` credentials are for local development only; replace them and use managed secrets for shared or production deployments.
+MinIO's S3 endpoint is <http://localhost:9000> and its console is <http://localhost:9001>. The Compose override uses the community-maintained `coollabsio/minio` image, which also supplies the `mc` client for bucket initialization. The default `minioadmin` / `minioadmin` credentials are for local development only; replace them and use managed secrets for shared or production deployments.
 
 ## Local URLs
 
@@ -239,7 +239,7 @@ To run that stack with local MinIO and automatic bucket initialization:
 docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.minio.yml up -d
 ```
 
-Open the MinIO console at <http://localhost:9001> (`minioadmin` / `minioadmin`). These defaults are for local development only; do not use them in production.
+Open the MinIO console at <http://localhost:9001> (`minioadmin` / `minioadmin`). The Compose override uses `coollabsio/minio` for the server and one-shot `mc` init container. These default credentials are for local development only; do not use them in production.
 
 Useful commands:
 
