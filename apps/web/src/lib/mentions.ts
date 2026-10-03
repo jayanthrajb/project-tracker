@@ -6,12 +6,16 @@ export function nameSlug(name: string) {
   return name.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 }
 
+function emailLocalPart(email: string) {
+  return email.split('@')[0].toLowerCase();
+}
+
 const HANDLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export function mentionHandle(user: Pick<MentionableUser, 'name' | 'email'>) {
   const slug = nameSlug(user.name);
   if (slug) return slug;
-  const localPart = user.email ? user.email.slice(0, user.email.indexOf('@')).toLowerCase() : '';
+  const localPart = user.email ? emailLocalPart(user.email) : '';
   return HANDLE_PATTERN.test(localPart) ? localPart : '';
 }
 
@@ -63,7 +67,7 @@ export function buildMentionLookup(users: MentionableUser[]) {
     const slug = nameSlug(user.name);
     if (slug) lookup.set(slug, user);
     if (user.email) {
-      const localPart = user.email.slice(0, user.email.indexOf('@')).toLowerCase();
+      const localPart = emailLocalPart(user.email);
       if (localPart) lookup.set(localPart, user);
     }
   }

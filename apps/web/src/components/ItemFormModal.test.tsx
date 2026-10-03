@@ -148,6 +148,7 @@ describe('ItemFormModal behaviour', () => {
     await user.keyboard('{Escape}');
     expect(confirm).not.toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('dialog')).toContainElement(document.activeElement as HTMLElement);
     await user.click(screen.getByRole('button', { name: 'Close' }));
     await user.click(screen.getByRole('button', { name: 'Discard' }));
     expect(onClose).toHaveBeenCalledTimes(1);

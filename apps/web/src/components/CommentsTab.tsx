@@ -12,6 +12,7 @@ import { formatRelativeTime, initials } from '../lib/utils';
 import type { CommentsPage, ItemComment, MentionableUser, Role } from '../types';
 
 const PAGE_SIZE = 25;
+let optimisticSeq = 0;
 
 type CommentsData = InfiniteData<CommentsPage, number>;
 
@@ -214,7 +215,7 @@ export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCo
       const previous = queryClient.getQueryData<CommentsData>(queryKey);
       const now = new Date().toISOString();
       const optimistic: ItemComment = {
-        id: `pending-${Date.now()}`,
+        id: `pending-${Date.now()}-${(optimisticSeq += 1)}`,
         itemId,
         authorId: currentUser.id,
         body: text,
@@ -257,7 +258,6 @@ export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCo
   const deleteComment = useMutation({
     mutationFn: (id: string) => api<void>(`/comments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     onSuccess: (_result, id) => {
-      setPendingDelete(null);
       queryClient.setQueryData<CommentsData>(queryKey, (data) =>
         updatePages(data, (current) => current.filter((entry) => entry.id !== id), -1),
       );
@@ -265,6 +265,7 @@ export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCo
     },
     onError: (error) => toast.error(errorMessage(error, 'Could not delete comment')),
     onSettled: () => {
+      setPendingDelete(null);
       void invalidate();
     },
   });

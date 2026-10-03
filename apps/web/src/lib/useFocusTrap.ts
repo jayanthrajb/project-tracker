@@ -54,7 +54,13 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, active = true) 
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       container.removeAttribute('data-focus-trap');
-      if (previouslyFocused && document.contains(previouslyFocused)) previouslyFocused.focus();
+      if (previouslyFocused && previouslyFocused.isConnected && !previouslyFocused.closest('[hidden]')) {
+        previouslyFocused.focus();
+        return;
+      }
+      // Fall back to the enclosing trap (e.g. the item modal) so keyboard handling keeps working.
+      const traps = document.querySelectorAll<HTMLElement>('[data-focus-trap]');
+      traps[traps.length - 1]?.focus();
     };
   }, [ref, active]);
 }

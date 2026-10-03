@@ -220,6 +220,20 @@ describe('CommentsTab permissions', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('closes the confirmation and shows an error toast when delete fails', async () => {
+    const user = userEvent.setup();
+    const succeed = apiMock.getMockImplementation();
+    apiMock.mockImplementation(((path: string, init?: RequestInit) =>
+      init?.method === 'DELETE' ? Promise.reject(new Error('Forbidden')) : succeed?.(path, init)) as ApiFn);
+    renderTab(sara);
+    const [first] = await rows();
+    await user.click(within(first).getByRole('button', { name: 'Delete' }));
+    await user.click(within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(toast.error).toHaveBeenCalledWith('Forbidden');
+    expect(screen.getAllByTestId('comment')).toHaveLength(2);
+  });
+
   it('does not delete when the confirmation is cancelled', async () => {
     const user = userEvent.setup();
     renderTab(sara);

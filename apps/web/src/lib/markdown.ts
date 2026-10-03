@@ -56,7 +56,12 @@ function mentionExtension(lookup: ReadonlyMap<string, MentionableUser>): Tokeniz
   };
 }
 
-export function renderMarkdown(body: string, lookup: ReadonlyMap<string, MentionableUser> = new Map()) {
+const EMPTY_LOOKUP: ReadonlyMap<string, MentionableUser> = new Map();
+const parsers = new WeakMap<ReadonlyMap<string, MentionableUser>, Marked>();
+
+function parserFor(lookup: ReadonlyMap<string, MentionableUser>) {
+  const cached = parsers.get(lookup);
+  if (cached) return cached;
   const marked = new Marked({ gfm: true, breaks: true, async: false });
   marked.use({
     extensions: [mentionExtension(lookup)],
@@ -67,6 +72,11 @@ export function renderMarkdown(body: string, lookup: ReadonlyMap<string, Mention
       },
     },
   });
-  const html = marked.parse(body) as string;
+  parsers.set(lookup, marked);
+  return marked;
+}
+
+export function renderMarkdown(body: string, lookup: ReadonlyMap<string, MentionableUser> = EMPTY_LOOKUP) {
+  const html = parserFor(lookup).parse(body) as string;
   return DOMPurify.sanitize(html, { ALLOWED_TAGS, ALLOWED_ATTR });
 }

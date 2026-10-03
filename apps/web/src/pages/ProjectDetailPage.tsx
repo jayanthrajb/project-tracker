@@ -147,9 +147,20 @@ export function ProjectDetailPage({ user }: { user: User }) {
   useEffect(() => {
     if (restoredItemParam.current || !itemsQuery.data) return;
     restoredItemParam.current = true;
-    const linked = itemParam ? itemsQuery.data.items.find((entry) => entry.id === itemParam) : undefined;
-    if (linked) setActiveItem(linked);
-  }, [itemParam, itemsQuery.data]);
+    if (!itemParam) return;
+    const linked = itemsQuery.data.items.find((entry) => entry.id === itemParam);
+    if (linked) {
+      setActiveItem(linked);
+      return;
+    }
+    // The linked item isn't in the current (filtered) list; drop the stale params.
+    setSearchParams((params) => {
+      const next = new URLSearchParams(params);
+      next.delete('item');
+      next.delete('tab');
+      return next;
+    }, { replace: true });
+  }, [itemParam, itemsQuery.data, setSearchParams]);
   const mergedItems = useMemo(
     () => items.map((item) => ({ ...item, ...(drafts[item.id] ?? {}) })),
     [items, drafts],
