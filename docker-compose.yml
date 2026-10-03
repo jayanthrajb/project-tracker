@@ -41,6 +41,15 @@ services:
       PORT: ${PORT:-4000}
       CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:8080}
       UPLOAD_DIR: ${UPLOAD_DIR:-/app/apps/api/uploads}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-local}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      S3_USE_PRESIGNED_URLS: ${S3_USE_PRESIGNED_URLS:-false}
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:-}
       NOTIFICATION_SCAN_INTERVAL_MS: ${NOTIFICATION_SCAN_INTERVAL_MS:-900000}
     volumes:
       - uploads:${UPLOAD_DIR:-/app/apps/api/uploads}

@@ -349,11 +349,11 @@ itemsRouter.delete('/:id', asyncHandler(async (req, res) => {
     where: { itemId },
     select: { storageKey: true },
   });
+  await Promise.all(attachments.map((attachment) => storage.delete(attachment.storageKey)));
   await prisma.$transaction((tx) => recordItemDeletion(tx, {
     userId: req.user!.id,
     item: existing,
   }));
-  await Promise.all(attachments.map((attachment) => storage.delete(attachment.storageKey)));
   res.status(204).send();
 }));
 

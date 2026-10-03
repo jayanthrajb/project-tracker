@@ -24,6 +24,7 @@ export class LocalStorageDriver implements StorageDriver {
   }
 
   async save(storageKey: string, content: Readable, _sizeBytes: number) {
+    void _sizeBytes;
     const filePath = this.resolveKey(storageKey);
     await mkdir(path.dirname(filePath), { recursive: true });
     await pipeline(content, createWriteStream(filePath, { flags: 'wx', mode: 0o600 }));
@@ -56,7 +57,13 @@ export class LocalStorageDriver implements StorageDriver {
 
   async exists(storageKey: string) {
     try {
-      await access(this.resolveKey(storageKey));
+      const filePath = this.resolveKey(storageKey);
+      const rootPath = await realpath(this.directory);
+      const resolvedFilePath = await realpath(filePath);
+      if (!resolvedFilePath.startsWith(`${rootPath}${path.sep}`)) {
+        throw new Error('Invalid storage path');
+      }
+      await access(resolvedFilePath);
       return true;
     } catch (error) {
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return false;

@@ -28,12 +28,14 @@ Update the image references before deploying, for example with `kustomize edit s
    ```bash
    kubectl apply -f k8s/namespace.yaml
    ```
-2. Create the Secret with your real `DATABASE_URL` and `JWT_SECRET`:
+2. Create the Secret with your real `DATABASE_URL` and `JWT_SECRET`. S3 credentials are required only when using `STORAGE_DRIVER=s3`:
    ```bash
    kubectl create secret generic project-tracker-secrets \
      --namespace project-tracker \
      --from-literal=DATABASE_URL='postgresql://db-user:db-password@db.example.com:5432/project_tracker?schema=public' \
-     --from-literal=JWT_SECRET='replace-with-a-long-random-secret'
+     --from-literal=JWT_SECRET='replace-with-a-long-random-secret' \
+     --from-literal=S3_ACCESS_KEY_ID='replace-with-minio-access-key' \
+     --from-literal=S3_SECRET_ACCESS_KEY='replace-with-minio-secret-key'
    ```
 3. Apply the non-secret config:
    ```bash
@@ -97,3 +99,9 @@ kubectl port-forward -n project-tracker svc/project-tracker-api 4000:4000
 ```
 
 Open <http://localhost:8080> after port-forwarding the web service.
+
+## S3-compatible storage
+
+The example ConfigMap defaults to `STORAGE_DRIVER=local`. For centralized MinIO, set `STORAGE_DRIVER=s3`, replace `S3_ENDPOINT` with its reachable S3 API endpoint, configure the region and bucket, and provide `S3_ACCESS_KEY_ID` and `S3_SECRET_ACCESS_KEY` through the Secret. Keep `S3_USE_PRESIGNED_URLS=false` to serve downloads through the authenticated API route.
+
+With `STORAGE_DRIVER=s3`, the uploads PVC is not used. Remove `uploads-pvc.yaml` from `k8s/kustomization.yaml` and remove the `uploads` volume and mount from `k8s/api-deployment.yaml` for an S3 deployment. This removes the `ReadWriteMany` requirement that applies when multiple API replicas share local disk storage.

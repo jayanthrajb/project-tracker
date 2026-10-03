@@ -160,7 +160,7 @@ projectsRouter.delete('/:id', asyncHandler(async (req, res) => {
     where: { item: { projectId } },
     select: { storageKey: true },
   });
-  await prisma.project.delete({ where: { id: projectId } });
   await Promise.all(attachments.map((attachment) => storage.delete(attachment.storageKey)));
+  await prisma.project.delete({ where: { id: projectId } });
   res.status(204).send();
 }));

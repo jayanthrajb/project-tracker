@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { Readable } from 'node:stream';
 
 import {
+  type BucketLocationConstraint,
   CreateBucketCommand,
   DeleteObjectCommand,
   GetObjectCommand,
@@ -12,7 +13,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-import type { StorageDriver } from './driver.js';
+import type { PresignedDownloadOptions, StorageDriver } from './driver.js';
 import { StorageObjectNotFoundError, StorageUnavailableError } from './errors.js';
 
 export interface S3StorageConfig {
@@ -30,8 +31,8 @@ const STORAGE_UNAVAILABLE_MESSAGE =
 
 function getErrorCode(error: unknown) {
   if (typeof error !== 'object' || error === null) return undefined;
-  if ('name' in error && typeof error.name === 'string') return error.name;
   if ('Code' in error && typeof error.Code === 'string') return error.Code;
+  if ('name' in error && typeof error.name === 'string') return error.name;
   return undefined;
 }
 
@@ -42,8 +43,10 @@ function getHttpStatus(error: unknown) {
   return typeof metadata.httpStatusCode === 'number' ? metadata.httpStatusCode : undefined;
 }
 
-function isNotFound(error: unknown) {
-  return getHttpStatus(error) === 404 || ['NotFound', 'NoSuchKey', 'NoSuchBucket'].includes(getErrorCode(error) ?? '');
+function isObjectNotFound(error: unknown) {
+  const code = getErrorCode(error);
+  if (code === 'NoSuchBucket') return false;
+  return getHttpStatus(error) === 404 || ['NotFound', 'NoSuchKey'].includes(code ?? '');
 }
 
 function isMissingBucket(error: unknown) {
@@ -58,7 +61,7 @@ export function sanitizeFilename(filename: string) {
   const basename = filename.replace(/\\/g, '/').split('/').pop() ?? '';
   const sanitized = basename
     .normalize('NFKC')
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    .replace(/\p{Cc}/gu, '')
     .replace(/[^A-Za-z0-9._ -]/g, '_')
     .trim()
     .replace(/^\.+/, '')
@@ -76,6 +79,7 @@ export class S3StorageDriver implements StorageDriver {
   private readonly client: S3Client;
   private readonly presignerClient: S3Client;
   private readonly bucket: string;
+  private readonly region: string;
   private ready = false;
   private initialization: Promise<void> | undefined;
 
@@ -94,6 +98,7 @@ export class S3StorageDriver implements StorageDriver {
       ? new S3Client({ ...clientConfig, endpoint: config.publicUrl })
       : this.client;
     this.bucket = config.bucket;
+    this.region = config.region;
   }
 
   async initialize() {
@@ -120,7 +125,16 @@ export class S3StorageDriver implements StorageDriver {
     } catch (error) {
       if (!isMissingBucket(error)) throw error;
       try {
-        await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+        await this.client.send(new CreateBucketCommand({
+          Bucket: this.bucket,
+          ...(this.region === 'us-east-1'
+            ? {}
+            : {
+                CreateBucketConfiguration: {
+                  LocationConstraint: this.region as BucketLocationConstraint,
+                },
+              }),
+        }));
         console.info(`[storage] Created S3 bucket "${this.bucket}"`);
       } catch (createError) {
         if (!isBucketAlreadyCreated(createError)) throw createError;
@@ -160,7 +174,7 @@ export class S3StorageDriver implements StorageDriver {
       return response.Body;
     } catch (error) {
       if (error instanceof StorageUnavailableError) throw error;
-      if (isNotFound(error)) throw new StorageObjectNotFoundError();
+      if (isObjectNotFound(error)) throw new StorageObjectNotFoundError();
       throw new StorageUnavailableError(STORAGE_UNAVAILABLE_MESSAGE, { cause: error });
     }
   }
@@ -186,17 +200,26 @@ export class S3StorageDriver implements StorageDriver {
       }));
       return true;
     } catch (error) {
-      if (isNotFound(error)) return false;
+      if (isObjectNotFound(error)) return false;
       throw new StorageUnavailableError(STORAGE_UNAVAILABLE_MESSAGE, { cause: error });
     }
   }
 
-  async createPresignedDownloadUrl(storageKey: string) {
+  async createPresignedDownloadUrl(storageKey: string, options?: PresignedDownloadOptions) {
     await this.ensureReady();
     try {
       return await getSignedUrl(
         this.presignerClient,
-        new GetObjectCommand({ Bucket: this.bucket, Key: storageKey }),
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: storageKey,
+          ...(options
+            ? {
+                ResponseContentType: options.mimeType,
+                ResponseContentDisposition: `attachment; filename="${options.filename}"`,
+              }
+            : {}),
+        }),
         { expiresIn: 300 },
       );
     } catch (error) {

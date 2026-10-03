@@ -15,8 +15,8 @@ import { asyncHandler } from '../lib/http.js';
 import { canEditItem } from '../lib/permissions.js';
 import { prisma } from '../lib/prisma.js';
 import { storage } from '../lib/storage/index.js';
-import { StorageObjectNotFoundError } from '../lib/storage/errors.js';
-import { createS3StorageKey, sanitizeFilename } from '../lib/storage/s3.js';
+import { StorageObjectNotFoundError, StorageUnavailableError } from '../lib/storage/errors.js';
+import { createS3StorageKey, S3StorageDriver, sanitizeFilename } from '../lib/storage/s3.js';
 import { requireAuth } from '../middleware/auth.js';
 import { requireCsrf } from '../middleware/csrf.js';
 
@@ -115,7 +115,13 @@ attachmentsRouter.get('/attachments/:id', requireCsrf, attachmentReadRateLimit, 
   if (!attachment) throw new AppError(404, 'Attachment not found');
   await findAccessibleItem(attachment.itemId, req.user);
   if (env.S3_USE_PRESIGNED_URLS && storage.createPresignedDownloadUrl) {
-    return res.redirect(302, await storage.createPresignedDownloadUrl(attachment.storageKey));
+    return res.redirect(
+      302,
+      await storage.createPresignedDownloadUrl(attachment.storageKey, {
+        filename: attachment.filename,
+        mimeType: attachment.mimeType,
+      }),
+    );
   }
 
   let stream: Readable;
@@ -133,8 +139,15 @@ attachmentsRouter.get('/attachments/:id', requireCsrf, attachmentReadRateLimit, 
   res.attachment(attachment.filename);
   res.setHeader('Content-Type', attachment.mimeType);
   stream.on('error', (error) => {
-    if (res.headersSent) res.destroy(error);
-    else next(error);
+    const streamError =
+      storage instanceof S3StorageDriver && !(error instanceof StorageUnavailableError)
+        ? new StorageUnavailableError(
+            'Attachment storage is unavailable. Check the S3 endpoint, bucket, credentials, and bucket permissions, then retry.',
+            { cause: error },
+          )
+        : error;
+    if (res.headersSent) res.destroy(streamError);
+    else next(streamError);
   });
   stream.pipe(res);
 }));
@@ -152,7 +165,7 @@ attachmentsRouter.delete('/attachments/:id', requireCsrf, attachmentWriteRateLim
   ) {
     throw new AppError(403, 'You cannot delete this attachment');
   }
-  await prisma.attachment.delete({ where: { id } });
   await storage.delete(attachment.storageKey);
+  await prisma.attachment.delete({ where: { id } });
   res.status(204).send();
 }));

@@ -12,4 +12,13 @@ data:
   CORS_ORIGIN: https://project-tracker.example.com
   API_UPSTREAM: http://project-tracker-api:4000
   UPLOAD_DIR: /app/apps/api/uploads
+  STORAGE_DRIVER: local
+  # For centralized MinIO, set STORAGE_DRIVER=s3 and point this at its API endpoint.
+  S3_ENDPOINT: https://minio.example.com
+  S3_REGION: us-east-1
+  S3_BUCKET: project-tracker-attachments
+  S3_FORCE_PATH_STYLE: 'true'
+  S3_USE_PRESIGNED_URLS: 'false'
+  # Optional public endpoint for presigned URLs; keep downloads proxied by default.
+  S3_PUBLIC_URL: ''
   NOTIFICATION_SCAN_INTERVAL_MS: '900000'
