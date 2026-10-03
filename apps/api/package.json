@@ -20,6 +20,8 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
     "@prisma/client": "^6.16.3",
     "bcryptjs": "^3.0.2",
     "cookie-parser": "^1.4.7",
