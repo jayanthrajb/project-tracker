@@ -13,7 +13,7 @@ import { normalizeImportRows, parseCsvRows } from '../lib/csv.js';
 import { canEditItem } from '../lib/permissions.js';
 import { recordItemChanges, recordItemCreation, recordItemDeletion } from '../lib/activity.js';
 import { notifyItemChanges, notifyItemCreated } from '../lib/notifications.js';
-import { localStorage } from '../lib/storage/local.js';
+import { storage } from '../lib/storage/index.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -349,11 +349,11 @@ itemsRouter.delete('/:id', asyncHandler(async (req, res) => {
     where: { itemId },
     select: { storageKey: true },
   });
+  await Promise.all(attachments.map((attachment) => storage.delete(attachment.storageKey)));
   await prisma.$transaction((tx) => recordItemDeletion(tx, {
     userId: req.user!.id,
     item: existing,
   }));
-  await Promise.all(attachments.map((attachment) => localStorage.delete(attachment.storageKey)));
   res.status(204).send();
 }));
 

@@ -53,6 +53,14 @@ _Add screenshots here after the first local run._
    npm run dev
    ```
 
+To run the API against the local MinIO service instead, use Docker Compose with all three files:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.minio.yml up -d
+```
+
+MinIO's S3 endpoint is <http://localhost:9000> and its console is <http://localhost:9001>. The Compose override uses the community-maintained `coollabsio/minio` image, which also supplies the `mc` client for bucket initialization. The default `minioadmin` / `minioadmin` credentials are for local development only; replace them and use managed secrets for shared or production deployments.
+
 ## Local URLs
 
 - Web: http://localhost:5173
@@ -196,6 +204,7 @@ Important notes:
 - If PostgreSQL runs on your host machine and the app runs in Docker containers, use `host.docker.internal` instead of `localhost` inside `DATABASE_URL`.
 - On Linux, `docker-compose.yml` maps `host.docker.internal` to the host gateway for the API and migrate containers.
 - `UPLOAD_DIR` defaults to `./uploads` and stores attachment files. Docker Compose mounts a persistent volume at this path; Kubernetes mounts the `project-tracker-uploads` PVC.
+- `STORAGE_DRIVER` defaults to `local`; set it to `s3` to use an S3-compatible service such as MinIO. `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY` are required for S3. `S3_FORCE_PATH_STYLE` defaults to `true`; `S3_USE_PRESIGNED_URLS` defaults to `false`, keeping downloads authenticated and proxied through the API. When presigned URLs are enabled, optionally set `S3_PUBLIC_URL` to the browser-accessible S3 endpoint.
 - `NOTIFICATION_SCAN_INTERVAL_MS` defaults to `900000` (15 minutes). Set it to `0` to disable periodic due/overdue notification scans; the scanner is disabled in tests.
 
 ### Docker Compose
@@ -223,6 +232,14 @@ Run the app stack plus the optional local Postgres override:
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.db.yml up -d
 ```
+
+To run that stack with local MinIO and automatic bucket initialization:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.db.yml -f docker-compose.minio.yml up -d
+```
+
+Open the MinIO console at <http://localhost:9001> (`minioadmin` / `minioadmin`). The Compose override uses `coollabsio/minio` for the server and one-shot `mc` init container. These default credentials are for local development only; do not use them in production.
 
 Useful commands:
 
@@ -331,7 +348,7 @@ All endpoints below require authentication. Mutating requests use the existing C
 | GET | `/api/attachments/:id` | Download an attachment after item access checks |
 | DELETE | `/api/attachments/:id` | Delete your attachment; ADMIN/MANAGER may delete any |
 
-Comments and item changes write history in the same database transaction as their mutations. Notifications are in-app only; no email or outbound notification channel is implemented. Attachment files are stored under `UPLOAD_DIR`.
+Comments and item changes write history in the same database transaction as their mutations. Notifications are in-app only; no email or outbound notification channel is implemented. Attachments use the local filesystem by default or an S3-compatible bucket when `STORAGE_DRIVER=s3`.
 
 ## Remaining roadmap
 

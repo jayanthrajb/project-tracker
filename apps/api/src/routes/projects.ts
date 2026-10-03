@@ -7,7 +7,7 @@ import { asyncHandler } from '../lib/http.js';
 import { prisma } from '../lib/prisma.js';
 import { canManageProjects } from '../lib/permissions.js';
 import { requireAuth } from '../middleware/auth.js';
-import { localStorage } from '../lib/storage/local.js';
+import { storage } from '../lib/storage/index.js';
 
 const projectSchema = z.object({
   name: z.string().min(2),
@@ -160,7 +160,7 @@ projectsRouter.delete('/:id', asyncHandler(async (req, res) => {
     where: { item: { projectId } },
     select: { storageKey: true },
   });
+  await Promise.all(attachments.map((attachment) => storage.delete(attachment.storageKey)));
   await prisma.project.delete({ where: { id: projectId } });
-  await Promise.all(attachments.map((attachment) => localStorage.delete(attachment.storageKey)));
   res.status(204).send();
 }));

@@ -380,4 +380,64 @@ describe('Phase 2 routes', () => {
       await rm(uploadDir, { recursive: true, force: true });
     }
   });
+
+  it('returns 503 when attachment storage is unavailable', async () => {
+    vi.resetModules();
+    const uploadDir = await mkdtemp(path.join(os.tmpdir(), 'project-tracker-unavailable-'));
+    const state = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: state.prismaMock }));
+    const { StorageUnavailableError } = await import('../lib/storage/errors.js');
+    const unavailable = () => new StorageUnavailableError(
+      'Attachment storage is unavailable. Check the S3 endpoint, bucket, credentials, and bucket permissions, then retry.',
+    );
+    const storage = {
+      save: vi.fn(async () => {
+        throw unavailable();
+      }),
+      createReadStream: vi.fn(async () => {
+        throw unavailable();
+      }),
+      delete: vi.fn(async () => {
+        throw unavailable();
+      }),
+      exists: vi.fn(),
+    };
+    vi.doMock('../lib/storage/index.js', () => ({ storage }));
+    const previousUploadDir = process.env.UPLOAD_DIR;
+    process.env.UPLOAD_DIR = uploadDir;
+    try {
+      const { createApp } = await import('../app.js');
+      const manager = await login(createApp(), 'sara.manager@example.com');
+      const response = await manager.agent
+        .post('/api/items/item-1/attachments')
+        .set('x-csrf-token', manager.csrf)
+        .attach('file', Buffer.from('attachment contents'), { filename: 'notes.txt', contentType: 'text/plain' });
+
+      expect(response.status).toBe(503);
+      expect(response.body.error.message).toContain('Check the S3 endpoint');
+      expect(storage.save).toHaveBeenCalledOnce();
+
+      state.attachments.push({
+        id: 'attachment-unavailable',
+        itemId: 'item-1',
+        uploaderId: 'manager-1',
+        filename: 'notes.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 19,
+        storageKey: 'items/item-1/attachment-notes.txt',
+        createdAt: new Date(),
+      });
+      const download = await manager.agent.get('/api/attachments/attachment-unavailable');
+      expect(download.status).toBe(503);
+      const remove = await manager.agent
+        .delete('/api/attachments/attachment-unavailable')
+        .set('x-csrf-token', manager.csrf);
+      expect(remove.status).toBe(503);
+      expect(state.attachments).toHaveLength(1);
+    } finally {
+      if (previousUploadDir === undefined) delete process.env.UPLOAD_DIR;
+      else process.env.UPLOAD_DIR = previousUploadDir;
+      await rm(uploadDir, { recursive: true, force: true });
+    }
+  });
 });

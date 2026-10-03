@@ -3,6 +3,7 @@ import multer from 'multer';
 import { ZodError } from 'zod';
 
 import { AppError } from '../lib/errors.js';
+import { StorageUnavailableError } from '../lib/storage/errors.js';
 
 export function errorHandler(error: unknown, _req: Request, res: Response, next: NextFunction) {
   void next;
@@ -13,6 +14,10 @@ export function errorHandler(error: unknown, _req: Request, res: Response, next:
         details: error.issues,
       },
     });
+  }
+
+  if (error instanceof StorageUnavailableError) {
+    error = new AppError(503, error.message);
   }
 
   if (error instanceof AppError) {

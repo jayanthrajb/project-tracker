@@ -1,8 +1,11 @@
 import { createApp } from './app.js';
 import { env, envLoadMeta, getDatabaseConnectionMeta } from './lib/env.js';
 import { deriveDueNotifications } from './lib/notifications.js';
+import { initializeStorage } from './lib/storage/index.js';
 
 const app = createApp();
+
+await initializeStorage();
 
 app.listen(env.PORT, () => {
   const db = getDatabaseConnectionMeta(env.DATABASE_URL);
