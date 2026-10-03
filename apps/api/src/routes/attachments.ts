@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 import type { Readable } from 'node:stream';
 import { Router } from 'express';
 import { rateLimit } from 'express-rate-limit';
@@ -43,7 +44,11 @@ const allowedMimeTypes = new Set([
 const upload = multer({
   storage: multer.diskStorage({
     destination: os.tmpdir(),
-    filename: (_req, _file, callback) => callback(null, randomUUID()),
+    filename: (req, _file, callback) => {
+      const filename = randomUUID();
+      temporaryUploadPaths.set(req, path.join(os.tmpdir(), filename));
+      callback(null, filename);
+    },
   }),
   limits: { fileSize: MAX_FILE_SIZE, files: 1 },
   fileFilter: (_req, file, callback) => {
@@ -56,6 +61,7 @@ const upload = multer({
 });
 const idSchema = z.object({ id: z.string().min(1) });
 const emptyBodySchema = z.object({}).strict();
+const temporaryUploadPaths = new WeakMap<object, string>();
 
 export const attachmentsRouter = Router();
 const attachmentReadRateLimit = rateLimit({
@@ -76,6 +82,8 @@ const attachmentWriteRateLimit = rateLimit({
 attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRateLimit, requireAuth, upload.single('file'), asyncHandler(async (req, res) => {
   if (!req.file) throw new AppError(400, 'An allowed file is required');
   const file = req.file;
+  const temporaryFilePath = temporaryUploadPaths.get(req);
+  if (!temporaryFilePath) throw new AppError(500, 'Unable to resolve temporary upload file');
   try {
     const { id } = idSchema.parse(req.params);
     if (!req.user) throw new AppError(401, 'Authentication required');
@@ -85,7 +93,7 @@ attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRat
       throw new AppError(403, 'You cannot attach files to this item');
     }
     const storageKey = createS3StorageKey(item.id, file.originalname);
-    await storage.save(storageKey, createReadStream(file.path), file.size);
+    await storage.save(storageKey, createReadStream(temporaryFilePath), file.size);
     try {
       const attachment = await prisma.attachment.create({
         data: {
@@ -103,7 +111,8 @@ attachmentsRouter.post('/items/:id/attachments', requireCsrf, attachmentWriteRat
       throw error;
     }
   } finally {
-    await rm(file.path, { force: true });
+    temporaryUploadPaths.delete(req);
+    await rm(temporaryFilePath, { force: true });
   }
 }));
 
