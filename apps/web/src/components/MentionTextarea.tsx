@@ -131,7 +131,7 @@ export function MentionTextarea({
           id={listboxId}
           role="listbox"
           aria-label="Mention a user"
-          className="absolute left-0 top-full z-10 mt-1 max-h-56 w-64 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg"
+          className="absolute left-0 top-full z-10 mt-1 max-h-56 w-72 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 text-sm shadow-lg"
         >
           {candidates.map((user, index) => (
             <li
