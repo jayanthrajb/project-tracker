@@ -57,6 +57,26 @@ beforeEach(() => {
 });
 
 describe('ItemFormModal tabs', () => {
+  it('locks the parent project when editing and retains it in the submitted item', async () => {
+    const { onSubmit } = renderModal();
+    const select = screen.getByRole('combobox', { name: 'Parent project' });
+    expect(select).toBeDisabled();
+    expect(select).toHaveValue('p1');
+    expect(select).toHaveAccessibleDescription('Existing items cannot be moved between projects.');
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ projectId: 'p1' })));
+  });
+
+  it('allows choosing a parent project when creating an item', async () => {
+    const other = { ...project, id: 'p2', code: 'BET', name: 'Beta' };
+    renderModal('/projects/p1', { item: undefined, projects: [project, other] });
+    const select = screen.getByRole('combobox', { name: 'Parent project' });
+    expect(select).toBeEnabled();
+    await userEvent.setup().selectOptions(select, 'p2');
+    expect(select).toHaveValue('p2');
+    expect(screen.queryByText('Existing items cannot be moved between projects.')).not.toBeInTheDocument();
+  });
+
   it('offers BACKLOG before OPEN and shows null actual dates as explicit read-only states', () => {
     renderModal();
     const status = screen.getByLabelText('status');
