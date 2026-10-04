@@ -1,7 +1,7 @@
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
 
-import { neutralColor, priorityColors, riskColors } from '../lib/itemColors';
+import { backlogColor, neutralColor, priorityColors, riskColors } from '../lib/itemColors';
 import { cn, formatDate, formatRelativeTime } from '../lib/utils';
 import type { ActivityAction, ActivityEntry, MentionableUser } from '../types';
 
@@ -58,6 +58,7 @@ function ValueChip({ field, value, users }: { field: string | null; value: strin
   }
   if (field === 'priority' && value && value in priorityColors) color = priorityColors[value as keyof typeof priorityColors];
   if (field === 'risk' && value && value in riskColors) color = riskColors[value as keyof typeof riskColors];
+  if (field === 'status' && value === 'BACKLOG') color = `border ${backlogColor}`;
   return <span className={cn('inline-block max-w-full break-words rounded px-1.5 py-0.5 text-xs', color)}>{label}</span>;
 }
 

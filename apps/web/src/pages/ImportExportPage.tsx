@@ -123,7 +123,7 @@ export function ImportExportPage() {
             </select>
             <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.status} onChange={(event) => setExportFilters((current) => ({ ...current, status: event.target.value }))}>
               <option value="">All statuses</option>
-              {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((status) => <option key={status} value={status}>{status}</option>)}
+              {['BACKLOG', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((status) => <option key={status} value={status}>{status}</option>)}
             </select>
             <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={exportFilters.search} onChange={(event) => setExportFilters((current) => ({ ...current, search: event.target.value }))} placeholder="Search text" />
             <button onClick={() => exportMutation.mutate()} className="inline-flex rounded-lg bg-slate-900 px-4 py-2 text-sm text-white">{exportMutation.isPending ? 'Exporting…' : 'Export items'}</button>

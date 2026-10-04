@@ -26,7 +26,7 @@ export interface SavedView {
 }
 
 export const filterOptions = {
-  status: ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'],
+  status: ['BACKLOG', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'],
   type: ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'],
   priority: ['P0', 'P1', 'P2', 'P3'],
   risk: ['LOW', 'MEDIUM', 'HIGH'],

@@ -3,18 +3,19 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 
 import { api } from './api';
-import { constrainFilters, filterKeys, itemQuery, readItemFilters, readItemSort, viewSort, writeItemFilters } from './itemViewFilters';
+import { constrainFilters, filterKeys, filterOptions, itemQuery, readItemFilters, readItemSort, viewSort, writeItemFilters } from './itemViewFilters';
 import type { ItemViewFilters, SavedView } from './itemViewFilters';
 import type { User } from '../types';
 
-export function useSavedViews(user: User, projectId?: string, ownItems = false) {
+export function useSavedViews(user: User, projectId?: string, ownItems = false, defaultActiveStatuses = false) {
   const [params, setParams] = useSearchParams();
   const client = useQueryClient();
   const viewsQuery = useQuery({ queryKey: ['saved-views', user.id], queryFn: () => api<{ views: SavedView[] }>('/views') });
   const views = (viewsQuery.data?.views ?? []).filter((view) => ownItems || !view.projectId || view.projectId === projectId);
   const selected = views.find((view) => view.id === params.get('view'));
   const constrain = (filters: ItemViewFilters) => constrainFilters(filters, projectId, ownItems ? user.id : undefined);
-  const filters = constrain(readItemFilters(params));
+  const useProjectDefault = Boolean(defaultActiveStatuses && projectId && !ownItems && !params.has('view') && !filterKeys.some((key) => params.has(key)));
+  const filters = constrain(useProjectDefault ? { statuses: filterOptions.status.filter((status) => status !== 'DONE') } : readItemFilters(params));
   const sort = readItemSort(params);
   const query = itemQuery(filters, sort);
   const initialized = useRef('');
@@ -28,14 +29,14 @@ export function useSavedViews(user: User, projectId?: string, ownItems = false) 
     // Explicit URL filters always win, including item/tab deep links with filters.
     if (filterKeys.some((key) => params.has(key))) return;
     const initial = id ? views.find((view) => view.id === id) : firstLoad ? views.find((view) => view.isDefault && view.userId === user.id) : undefined;
-    if (!initial) return;
+    if (!initial && !useProjectDefault) return;
     setParams((current) => {
       if (filterKeys.some((key) => current.has(key))) return current;
-      const next = writeItemFilters(current, constrainFilters(initial.filtersJson, projectId, ownItems ? user.id : undefined), viewSort(initial));
-      next.set('view', initial.id);
+      const next = writeItemFilters(current, constrainFilters(initial?.filtersJson ?? { statuses: filterOptions.status.filter((status) => status !== 'DONE') }, projectId, ownItems ? user.id : undefined), initial ? viewSort(initial) : 'score-desc');
+      if (initial) next.set('view', initial.id);
       return next;
     }, { replace: true });
-  }, [context, ownItems, params, projectId, setParams, user.id, views, viewsQuery.data]);
+  }, [context, ownItems, params, projectId, setParams, useProjectDefault, user.id, views, viewsQuery.data]);
 
   const choose = (view?: SavedView) => {
     setParams((current) => {

@@ -8,6 +8,7 @@ import { ItemFormModal } from './ItemFormModal';
 import { ApiError, api, uploadAttachment } from '../lib/api';
 import type * as ApiModule from '../lib/api';
 import type { Item, Project, User } from '../types';
+import { formatRelativeTime } from '../lib/utils';
 
 vi.mock('../lib/api', async (importOriginal) => ({ ...await importOriginal<typeof ApiModule>(), api: vi.fn(), uploadAttachment: vi.fn() }));
 vi.mock('react-hot-toast', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
@@ -20,7 +21,7 @@ const project: Project = {
 };
 const item: Item = {
   id: 'i1', projectId: 'p1', key: 'APO-1', type: 'TASK', title: 'Ship it', description: 'Desc', status: 'OPEN', priority: 'P2', risk: 'MEDIUM',
-  assigneeId: null, reporterId: 'u1', dueDate: null, estimateHours: null, spentHours: 0, tags: ['a'], createdAt: '', updatedAt: '', closedAt: null,
+  assigneeId: null, reporterId: 'u1', dueDate: null, estimateHours: null, spentHours: 0, tags: ['a'], createdAt: '', updatedAt: '', closedAt: null, startedAt: null,
   score: 1, project: { id: 'p1', name: 'Apollo', code: 'APO' }, assignee: null, reporter: manager,
 };
 
@@ -56,6 +57,32 @@ beforeEach(() => {
 });
 
 describe('ItemFormModal tabs', () => {
+  it('offers BACKLOG before OPEN and shows null actual dates as explicit read-only states', () => {
+    renderModal();
+    const status = screen.getByLabelText('status');
+    expect(Array.from((status as HTMLSelectElement).options).map((option) => option.value)).toEqual(['BACKLOG', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE']);
+    expect(screen.getByText('Not started')).toBeInTheDocument();
+    expect(screen.getByText('Not finished')).toBeInTheDocument();
+    expect(screen.getByText(/Read-only, system-set/)).toBeInTheDocument();
+    expect(screen.getByLabelText('Due date (target)')).toHaveAttribute('type', 'date');
+    expect(document.querySelector('[name="startedAt"], [name="closedAt"]')).toBeNull();
+  });
+
+  it('renders relative actual dates with exact timestamps and never submits them', async () => {
+    const startedAt = '2026-10-01T12:34:56.000Z';
+    const closedAt = '2026-10-03T16:00:00.000Z';
+    const { onSubmit } = renderModal('/projects/p1', { item: { ...item, status: 'BACKLOG', startedAt, closedAt } });
+    for (const value of [startedAt, closedAt]) {
+      expect(screen.getByTitle(value)).toHaveTextContent(formatRelativeTime(value));
+      expect(screen.getByTitle(value).tagName).toBe('TIME');
+    }
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalled());
+    expect(onSubmit.mock.calls[0][0]).toMatchObject({ status: 'BACKLOG' });
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('startedAt');
+    expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('closedAt');
+  });
+
   it('shows four tabs with Details selected and does not fetch comments up front', () => {
     renderModal();
     const tabs = screen.getAllByRole('tab');

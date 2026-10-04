@@ -7,7 +7,9 @@ import { ConfirmDialog } from './ConfirmDialog';
 import { Tabs } from './Tabs';
 import type { Item, ItemPriority, ItemRisk, ItemStatus, ItemType, Project, User } from '../types';
 import { useFocusTrap } from '../lib/useFocusTrap';
-import { toDateInput } from '../lib/utils';
+import { cn, formatRelativeTime, toDateInput } from '../lib/utils';
+import { filterOptions } from '../lib/itemViewFilters';
+import { backlogColor } from '../lib/itemColors';
 
 // Loaded on first activation of the Comments tab so the markdown/sanitizer libraries
 // stay out of the initial bundle.
@@ -27,7 +29,7 @@ const schema = z.object({
   title: z.string().min(2),
   description: z.string(),
   type: z.enum(['TASK', 'BUG', 'RISK', 'ENHANCEMENT']),
-  status: z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE']),
+  status: z.enum(filterOptions.status),
   priority: z.enum(['P0', 'P1', 'P2', 'P3']),
   risk: z.enum(['LOW', 'MEDIUM', 'HIGH']),
   assigneeId: z.string(),
@@ -146,8 +148,8 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
       {(['type', 'status', 'priority', 'risk'] as const).map((field) => (
         <label key={field} className="grid gap-1 text-sm">
           <span>{field}</span>
-          <select className="rounded-lg border border-slate-300 px-3 py-2" {...form.register(field)}>
-            {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'] : field === 'status' ? ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'] : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => (
+          <select className={cn('rounded-lg border border-slate-300 px-3 py-2', field === 'status' && form.watch('status') === 'BACKLOG' && backlogColor)} {...form.register(field)}>
+            {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'] : field === 'status' ? filterOptions.status : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => (
               <option key={option} value={option}>{option}</option>
             ))}
           </select>
@@ -167,9 +169,14 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
         </select>
       </label>
       <label className="grid gap-1 text-sm">
-        <span>Due date</span>
+        <span>Due date (target)</span>
         <input type="date" className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('dueDate')} />
       </label>
+      {item && <dl className="grid gap-3 rounded-lg bg-slate-50 p-3 text-sm md:col-span-2 md:grid-cols-2">
+        <div className="md:col-span-2 text-xs text-slate-500">Actual dates · Read-only, system-set by status transitions</div>
+        <div><dt className="font-medium">Actual start</dt><dd>{item.startedAt ? <time dateTime={item.startedAt} title={item.startedAt}>{formatRelativeTime(item.startedAt)}</time> : 'Not started'}</dd></div>
+        <div><dt className="font-medium">Actual finish</dt><dd>{item.closedAt ? <time dateTime={item.closedAt} title={item.closedAt}>{formatRelativeTime(item.closedAt)}</time> : 'Not finished'}</dd></div>
+      </dl>}
       <label className="grid gap-1 text-sm">
         <span>Estimate hours</span>
         <input type="number" className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('estimateHours', { valueAsNumber: true })} />
