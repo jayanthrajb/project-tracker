@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { Suspense, lazy, useMemo, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Toaster, toast } from 'react-hot-toast';
@@ -15,6 +15,8 @@ import { ImportExportPage } from './pages/ImportExportPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import type { Project, User } from './types';
 import { NotificationBell } from './components/NotificationBell';
+
+const ReportsPage = lazy(() => import('./pages/ReportsPage'));
 
 function ProtectedLayout() {
   const queryClient = useQueryClient();
@@ -107,14 +109,17 @@ function ProtectedLayout() {
         </nav>
       </header>
       <main className="mx-auto max-w-7xl p-4">
-        <Routes>
-          <Route path="/" element={<DashboardPage user={currentUser} />} />
-          <Route path="/projects" element={<ProjectsPage user={currentUser} />} />
-          <Route path="/projects/:projectId" element={<ProjectDetailPage user={currentUser} />} />
-          <Route path="/my-items" element={<MyItemsPage user={currentUser} />} />
-          <Route path="/import-export" element={<ImportExportPage />} />
-          <Route path="/admin/users" element={<AdminUsersPage currentUser={currentUser} />} />
-        </Routes>
+        <Suspense fallback={<div className="p-8 text-sm text-slate-500">Loading page…</div>}>
+          <Routes>
+            <Route path="/" element={<DashboardPage user={currentUser} />} />
+            <Route path="/projects" element={<ProjectsPage user={currentUser} />} />
+            <Route path="/projects/:projectId" element={<ProjectDetailPage user={currentUser} />} />
+            <Route path="/projects/:projectId/reports" element={<ReportsPage user={currentUser} />} />
+            <Route path="/my-items" element={<MyItemsPage user={currentUser} />} />
+            <Route path="/import-export" element={<ImportExportPage />} />
+            <Route path="/admin/users" element={<AdminUsersPage currentUser={currentUser} />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );
