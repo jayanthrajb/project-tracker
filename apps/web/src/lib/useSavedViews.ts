@@ -18,16 +18,12 @@ export function useSavedViews(user: User, projectId?: string, ownItems = false) 
   const sort = readItemSort(params);
   const query = itemQuery(filters, sort);
   const initialized = useRef('');
-  const previousViewId = useRef<string | null>();
   const context = `${user.id}:${projectId ?? 'my-items'}`;
 
   useEffect(() => {
     if (!viewsQuery.data) return;
     const firstLoad = initialized.current !== context;
     const id = params.get('view');
-    const changedView = previousViewId.current !== id;
-    previousViewId.current = id;
-    if (!firstLoad && !changedView) return;
     initialized.current = context;
     // Explicit URL filters always win, including item/tab deep links with filters.
     if (filterKeys.some((key) => params.has(key))) return;

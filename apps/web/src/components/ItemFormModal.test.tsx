@@ -5,7 +5,7 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ItemFormModal } from './ItemFormModal';
-import { api, uploadAttachment } from '../lib/api';
+import { ApiError, api, uploadAttachment } from '../lib/api';
 import type * as ApiModule from '../lib/api';
 import type { Item, Project, User } from '../types';
 
@@ -150,6 +150,19 @@ describe('ItemFormModal tabs', () => {
     await waitFor(() => expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments1'));
     await user.click(screen.getByRole('tab', { name: 'Details' }));
     expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments1');
+  });
+
+  it('does not show a total badge for uploads when the server list never succeeded', async () => {
+    const user = userEvent.setup();
+    apiMock.mockRejectedValue(new ApiError('Not found', 404));
+    vi.mocked(uploadAttachment).mockResolvedValue({ attachment: { id: 'a1', filename: 'notes.pdf', mimeType: 'application/pdf', sizeBytes: 4, createdAt: '2026-01-01T12:00:00Z', uploaderId: 'u1' } });
+    renderModal('/projects/p1?tab=attachments');
+    await screen.findByText(/Attachment list endpoint is unavailable/);
+    await user.upload(screen.getByLabelText('Choose attachments'), new File(['data'], 'notes.pdf', { type: 'application/pdf' }));
+    await screen.findByText('notes.pdf');
+    expect(screen.getByRole('tab', { name: 'Attachments' })).toHaveTextContent(/^Attachments$/);
+    expect(screen.getByText(/Showing known uploaded files only/)).toBeInTheDocument();
+    expect(screen.getByText(/Attachment list endpoint is unavailable/)).toBeInTheDocument();
   });
 });
 

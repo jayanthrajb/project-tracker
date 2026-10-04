@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MAX_FILE_SIZE } from 'virtual:attachment-constraints';
@@ -15,6 +15,11 @@ vi.mock('../lib/api', async (importOriginal) => ({
   attachmentBlob: vi.fn(),
 }));
 
+const apiMock = vi.mocked(api);
+const constructorSpy = vi.fn();
+const openSpy = vi.fn();
+const sendSpy = vi.fn();
+
 class UploadTransport {
   static instances: UploadTransport[] = [];
   upload = { onprogress: null as ((event: { lengthComputable: boolean; loaded: number; total: number }) => void) | null };
@@ -24,11 +29,11 @@ class UploadTransport {
   status = 0;
   responseText = '';
   withCredentials = false;
-  open = vi.fn();
+  open = openSpy;
   setRequestHeader = vi.fn();
-  send = vi.fn();
+  send = sendSpy;
   abort = vi.fn(() => this.onabort?.());
-  constructor() { UploadTransport.instances.push(this); }
+  constructor() { constructorSpy(); UploadTransport.instances.push(this); }
   finish(status: number, data: unknown) {
     this.status = status;
     this.responseText = JSON.stringify(data);
@@ -80,11 +85,20 @@ describe('AttachmentsTab', () => {
 
   it('rejects oversized and unsupported files before creating any upload transport', async () => {
     setup();
+    await screen.findByText('report.pdf');
+    apiMock.mockClear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
     const large = pdf('large.pdf');
     Object.defineProperty(large, 'size', { value: MAX_FILE_SIZE + 1 });
     fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [large, new File(['x'], 'bad.exe', { type: 'application/octet-stream' })] } });
     expect(await screen.findByText(/File exceeds/)).toBeInTheDocument();
     expect(screen.getByText('File type is not allowed')).toBeInTheDocument();
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(constructorSpy).not.toHaveBeenCalled();
+    expect(openSpy).not.toHaveBeenCalled();
+    expect(sendSpy).not.toHaveBeenCalled();
     expect(UploadTransport.instances).toHaveLength(0);
     expect(screen.queryByRole('button', { name: /Retry/ })).not.toBeInTheDocument();
   });
@@ -236,21 +250,35 @@ describe('AttachmentsTab', () => {
     await expect(actual.attachmentBlob('a1')).rejects.toThrow(/Direct storage redirects are not allowed/);
   });
 
-  it('preserves an unavailable list endpoint error after a successful upload populates cache', async () => {
+  it('preserves endpoint errors while showing known uploads without claiming a complete list/count', async () => {
     vi.mocked(api).mockRejectedValue(new ApiError('Not found', 404));
     const { client, count } = setup();
     expect(await screen.findByText(/Attachment list endpoint is unavailable/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText('Choose attachments'), { target: { files: [pdf()] } });
     UploadTransport.instances[0].finish(201, { attachment: { ...attachment, id: 'new', filename: 'new.pdf' } });
-    await waitFor(() => expect(count).toHaveBeenLastCalledWith(1));
-    expect(client.getQueryData(['attachments', 'i1'])).toMatchObject({ attachments: [{ filename: 'new.pdf' }] });
+    await screen.findByText('new.pdf');
+    expect(count).toHaveBeenLastCalledWith(null);
+    expect(client.getQueryData(['attachments', 'i1'])).toMatchObject({ attachments: [{ filename: 'new.pdf' }], listComplete: false });
     expect(screen.getByText(/Attachment list endpoint is unavailable/)).toBeInTheDocument();
-    expect(screen.queryByRole('list', { name: 'Attachments' })).not.toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent('new.pdf');
+    expect(screen.getByText(/Showing known uploaded files only/)).toBeInTheDocument();
     expect(screen.queryByText('No attachments yet')).not.toBeInTheDocument();
     vi.mocked(api).mockResolvedValue({ attachments: [{ ...attachment, id: 'new', filename: 'new.pdf' }] });
     await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText('new.pdf')).toBeInTheDocument();
-    expect(screen.queryByText(/Attachment list endpoint is unavailable/)).not.toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByText(/Attachment list endpoint is unavailable/)).not.toBeInTheDocument());
+    expect(screen.getByText('new.pdf')).toBeInTheDocument();
+    expect(count).toHaveBeenLastCalledWith(1);
+    expect(screen.queryByText(/Showing known uploaded files only/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the last server list visible alongside errors when refetch fails', async () => {
+    const { client, count } = setup();
+    await screen.findByText('report.pdf');
+    vi.mocked(api).mockRejectedValue(new ApiError('Offline', 503));
+    await act(async () => { await client.refetchQueries({ queryKey: ['attachments', 'i1'] }); });
+    expect(await screen.findByText('Storage is temporarily unavailable, try again')).toBeInTheDocument();
+    expect(screen.getByRole('list', { name: 'Attachments' })).toHaveTextContent('report.pdf');
+    expect(count).toHaveBeenLastCalledWith(1);
   });
 
   it('loads image thumbnails through the authenticated API and revokes object URLs on unmount', async () => {

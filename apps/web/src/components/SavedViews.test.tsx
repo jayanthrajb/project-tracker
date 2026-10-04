@@ -129,6 +129,22 @@ describe('SavedViews', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('view=v1&item=i2&tab=comments');
   });
 
+  it('restores saved filters on same-view filter-free navigation within the mounted page', async () => {
+    const interaction = userEvent.setup();
+    mount('/?view=v1&status=OPEN&sort=title-asc');
+    await screen.findByRole('button', { name: 'Rename view' });
+    expect(screen.getByLabelText('OPEN')).toBeChecked();
+    expect(screen.getByLabelText('Search')).toHaveValue('');
+    await interaction.click(screen.getByRole('button', { name: 'Incoming saved view' }));
+    await waitFor(() => expect(screen.getByLabelText('Search')).toHaveValue('urgent'));
+    expect(screen.getByLabelText('BLOCKED')).toBeChecked();
+    expect(screen.getByLabelText('OPEN')).not.toBeChecked();
+    expect(screen.getByLabelText('Sort')).toHaveValue('dueDate-asc');
+    expect(screen.getByTestId('location')).toHaveTextContent('view=v1&item=i2&tab=comments');
+    expect(screen.getByTestId('location')).toHaveTextContent('status=BLOCKED');
+    expect(screen.queryByText('Modified')).not.toBeInTheDocument();
+  });
+
   it('setting a default does not overwrite currently modified URL filters', async () => {
     const interaction = userEvent.setup();
     mount('/?view=v1&search=custom&sort=key-asc');

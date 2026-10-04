@@ -20,7 +20,12 @@ export interface Attachment {
 interface Props {
   item: Pick<Item, 'id' | 'assigneeId' | 'reporterId'>;
   currentUser: Pick<User, 'id' | 'role'>;
-  onCountChange?: (count: number) => void;
+  onCountChange?: (count: number | null) => void;
+}
+
+interface AttachmentsData {
+  attachments: Attachment[];
+  listComplete: boolean;
 }
 
 interface Upload {
@@ -98,7 +103,7 @@ export function AttachmentsTab({ item, currentUser, onCountChange }: Props) {
       try {
         const data = await api<{ attachments: Attachment[] }>(`/items/${encodeURIComponent(item.id)}/attachments`);
         setListError(null);
-        return data;
+        return { ...data, listComplete: true };
       } catch (failure) {
         setListError(failure instanceof ApiError && (failure.status === 404 || failure.status === 405)
           ? 'Attachment list endpoint is unavailable. The server must support GET /items/:id/attachments to list uploaded files.'
@@ -116,8 +121,8 @@ export function AttachmentsTab({ item, currentUser, onCountChange }: Props) {
   const [downloading, setDownloading] = useState<string | null>(null);
   const canModerate = currentUser.role === 'ADMIN' || currentUser.role === 'MANAGER';
   const canUpload = canModerate || item.assigneeId === currentUser.id || item.reporterId === currentUser.id;
-  const count = attachments.data?.attachments.length;
-  useEffect(() => { if (count !== undefined) onCountChange?.(count); }, [count, onCountChange]);
+  const count = attachments.data?.listComplete ? attachments.data.attachments.length : null;
+  useEffect(() => { onCountChange?.(count); }, [count, onCountChange]);
   useEffect(() => {
     const session = { active: true, running: false, controller: new AbortController() };
     lifecycle.current = session;
@@ -147,8 +152,9 @@ export function AttachmentsTab({ item, currentUser, onCountChange }: Props) {
         try {
           const { attachment } = await uploadAttachment<{ attachment: Attachment }>(item.id, active.file, (progress) => { if (session.active) updateUpload(active.id, { progress }); }, session.controller.signal);
           if (!session.active) return;
-          client.setQueryData<{ attachments: Attachment[] }>(queryKey, (data) => ({
+          client.setQueryData<AttachmentsData>(queryKey, (data) => ({
             attachments: [...(data?.attachments ?? []).filter((existing) => existing.id !== attachment.id), attachment],
+            listComplete: data?.listComplete === true,
           }));
           updateUpload(active.id, { status: 'done', progress: 100 });
           invalidate();
@@ -171,7 +177,7 @@ export function AttachmentsTab({ item, currentUser, onCountChange }: Props) {
   const deletion = useMutation({
     mutationFn: (id: string) => api<void>(`/attachments/${encodeURIComponent(id)}`, { method: 'DELETE' }),
     onSuccess: (_result, id) => {
-      client.setQueryData<{ attachments: Attachment[] }>(queryKey, (data) => data && ({ attachments: data.attachments.filter((entry) => entry.id !== id) }));
+      client.setQueryData<AttachmentsData>(queryKey, (data) => data && ({ ...data, attachments: data.attachments.filter((entry) => entry.id !== id) }));
       setPendingDelete(null);
       setError(null);
       invalidate();
@@ -204,10 +210,12 @@ export function AttachmentsTab({ item, currentUser, onCountChange }: Props) {
       onDrop={(event) => { event.preventDefault(); addFiles(event.dataTransfer.files); }}
     >
       {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
-      {listError || attachments.isError ? (
+      {(listError || attachments.isError) && (
         <div role="alert">{listError ?? 'Could not load attachments.'} <button type="button" onClick={() => void attachments.refetch()}>Retry</button></div>
-      ) : attachments.isPending ? <AttachmentsSkeleton />
-      : attachments.data.attachments.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No attachments yet</p> : (
+      )}
+      {attachments.data && !attachments.data.listComplete && <p role="status" className="text-sm text-slate-500">Showing known uploaded files only. The complete attachment list and total count are unavailable.</p>}
+      {attachments.isPending ? <AttachmentsSkeleton />
+      : !attachments.data?.attachments.length ? !listError && !attachments.isError && <p className="py-6 text-center text-sm text-slate-500">No attachments yet</p> : (
         <ul aria-label="Attachments" className="grid gap-3">
           {attachments.data.attachments.map((attachment) => (
             <li key={attachment.id} className="flex items-center gap-3 rounded-lg border border-slate-200 p-3">
