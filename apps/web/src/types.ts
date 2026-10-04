@@ -105,3 +105,25 @@ export interface MentionableUser {
   role?: Role;
   isActive?: boolean;
 }
+
+export type ActivityAction = 'CREATED' | 'UPDATED' | 'STATUS_CHANGED' | 'ASSIGNED' | 'COMMENTED' | 'DELETED' | 'IMPORTED' | 'BULK_UPDATED';
+
+export interface ActivityEntry {
+  id: string;
+  itemId: string | null;
+  projectId: string;
+  userId: string;
+  action: ActivityAction;
+  field: string | null;
+  oldValue: string | null;
+  newValue: string | null;
+  createdAt: string;
+  user: CommentAuthor | null;
+}
+
+export interface ActivityPage {
+  activity: ActivityEntry[];
+  total: number;
+  page: number;
+  pageSize: number;
+}

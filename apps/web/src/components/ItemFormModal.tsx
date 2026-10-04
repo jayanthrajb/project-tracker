@@ -12,6 +12,7 @@ import { toDateInput } from '../lib/utils';
 // Loaded on first activation of the Comments tab so the markdown/sanitizer libraries
 // stay out of the initial bundle.
 const CommentsTab = lazy(() => import('./CommentsTab').then((module) => ({ default: module.CommentsTab })));
+const HistoryTab = lazy(() => import('./HistoryTab').then((module) => ({ default: module.HistoryTab })));
 
 export const ITEM_TABS = ['details', 'comments', 'history', 'attachments'] as const;
 export type ItemTab = (typeof ITEM_TABS)[number];
@@ -242,6 +243,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
                   <Suspense fallback={<div className="py-6 text-center text-sm text-slate-400">Loading comments…</div>}>
                     <CommentsTab
                       itemId={item.id}
+                      projectId={item.projectId}
                       currentUser={currentUser}
                       users={users}
                       preferredUserIds={preferredUserIds}
@@ -250,7 +252,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
                   </Suspense>
                 ),
               },
-              { id: 'history', label: 'History', content: <ComingSoon /> },
+              { id: 'history', label: 'History', content: <Suspense fallback={<div className="py-6 text-sm text-slate-500">Loading history…</div>}>{item && <HistoryTab itemId={item.id} users={users} />}</Suspense> },
               { id: 'attachments', label: 'Attachments', content: <ComingSoon /> },
             ]}
           />
