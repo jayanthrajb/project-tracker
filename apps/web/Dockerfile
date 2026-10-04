@@ -10,6 +10,7 @@ COPY apps/web/package.json apps/web/package.json
 RUN npm ci
 
 COPY apps/web ./apps/web
+COPY apps/api/src/routes/attachments.ts ./apps/api/src/routes/attachments.ts
 RUN npm run build -w @project-tracker/web
 
 FROM nginx:alpine AS runtime

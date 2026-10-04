@@ -48,6 +48,7 @@ beforeEach(() => {
   apiMock.mockReset();
   apiMock.mockImplementation((async (path: string) => {
     if (path === '/projects') return { projects: [project], users: [user] };
+    if (path === '/views') return { views: [] };
     if (path === '/projects/p1') return { project };
     if (path === '/items?projectId=p1&page=1&pageSize=100') return { items: [item, hiddenItem], total: 2, pageSize: 100 };
     if (path.startsWith('/items?')) return { items: [item], total: 1 };
@@ -60,6 +61,44 @@ beforeEach(() => {
 });
 
 describe('Project activity integration', () => {
+  it('opens and closes an item from saved filters while preserving filters, view, drafts and selection and resetting stale tabs', async () => {
+    const original = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string) => {
+      if (path === '/views') return { views: [{
+        id: 'v1', name: 'Urgent', scope: 'PERSONAL', userId: user.id, projectId: project.id, isDefault: true,
+        filtersJson: { statuses: ['OPEN'], priorities: ['P0'], risks: ['HIGH'], search: 'Listed' },
+        sortJson: { field: 'title', direction: 'asc' },
+      }] };
+      return original(path);
+    }) as typeof api);
+    const interaction = userEvent.setup();
+    mount('/projects/p1?view=v1&status=OPEN&priority=P0&risk=HIGH&search=Listed&sort=title-asc&tab=history');
+    const row = (await screen.findByRole('button', { name: 'Listed item' })).closest('tr')!;
+    await interaction.click(within(row).getByRole('checkbox'));
+    await interaction.selectOptions(within(row).getAllByRole('combobox')[0], 'P1');
+    const before = new URLSearchParams(screen.getByTestId('location').textContent ?? '');
+    before.delete('tab');
+    await interaction.click(screen.getByRole('button', { name: 'Listed item' }));
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByTestId('location')).toHaveTextContent('view=v1');
+    expect(screen.getByTestId('location')).not.toHaveTextContent('tab=');
+    await interaction.click(screen.getByRole('tab', { name: 'History' }));
+    expect(screen.getByTestId('location')).toHaveTextContent('tab=history');
+    await interaction.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.getByTestId('location').textContent).toBe(`?${before.toString()}`);
+    expect(screen.getByText('1 unsaved change')).toBeInTheDocument();
+    expect(screen.getByText('1 selected')).toBeInTheDocument();
+    expect(within(row).getAllByRole('combobox')[0]).toHaveValue('P1');
+    expect(screen.getByLabelText('Freeze order while editing')).toBeChecked();
+    const query = apiMock.mock.calls.find(([path]) => path.startsWith('/items?') && path.includes('sort=title-asc'))?.[0];
+    const params = new URLSearchParams(query?.split('?')[1]);
+    expect(params.get('status')).toBe('OPEN');
+    expect(params.get('priority')).toBe('P0');
+    expect(params.get('risk')).toBe('HIGH');
+    expect(params.get('search')).toBe('Listed');
+  });
+
   it('opens filtered-out items on History from the recent activity feed without losing table drafts', async () => {
     const interaction = userEvent.setup();
     mount();

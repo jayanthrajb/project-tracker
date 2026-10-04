@@ -5,10 +5,11 @@ import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { ItemFormModal } from './ItemFormModal';
-import { api } from '../lib/api';
+import { api, uploadAttachment } from '../lib/api';
+import type * as ApiModule from '../lib/api';
 import type { Item, Project, User } from '../types';
 
-vi.mock('../lib/api', () => ({ api: vi.fn() }));
+vi.mock('../lib/api', async (importOriginal) => ({ ...await importOriginal<typeof ApiModule>(), api: vi.fn(), uploadAttachment: vi.fn() }));
 vi.mock('react-hot-toast', () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
 
 const apiMock = vi.mocked(api);
@@ -49,6 +50,7 @@ beforeEach(() => {
     if (path.startsWith('/users')) return { users: [] };
     if (path.startsWith('/items/i1/comments')) return { comments: [], total: 4, page: 1, pageSize: 25 };
     if (path.startsWith('/items/i1/activity')) return { activity: [], total: 0, page: 1, pageSize: 25 };
+    if (path === '/items/i1/attachments') return { attachments: [] };
     throw new Error(`Unexpected ${path}`);
   }) as typeof api);
 });
@@ -95,13 +97,13 @@ describe('ItemFormModal tabs', () => {
     renderModal();
     screen.getByRole('tab', { name: 'Details' }).focus();
     await user.keyboard('{ArrowLeft}');
-    expect(screen.getByRole('tab', { name: 'Attachments' })).toHaveFocus();
-    expect(screen.getByRole('tab', { name: 'Attachments' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Coming soon');
+    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveAttribute('aria-selected', 'true');
+    expect(await screen.findByText('No attachments yet')).toBeInTheDocument();
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: 'Attachments' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
     await user.keyboard('{Home}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
   });
@@ -117,6 +119,37 @@ describe('ItemFormModal tabs', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit.mock.calls[0][0]).toMatchObject({ title: 'Renamed', projectId: 'p1', status: 'OPEN', tags: ['a'], assigneeId: null });
+  });
+
+  it('lazy-loads attachments, derives its badge from cached list data and preserves Details edits', async () => {
+    const user = userEvent.setup();
+    renderModal('/projects/p1?search=foo');
+    expect(apiMock).not.toHaveBeenCalled();
+    await user.type(screen.getByLabelText('Title'), '!');
+    await user.click(screen.getByRole('tab', { name: 'Attachments' }));
+    expect(await screen.findByText('No attachments yet')).toBeInTheDocument();
+    expect(apiMock).toHaveBeenCalledWith('/items/i1/attachments');
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments0'));
+    expect(screen.getByTestId('location')).toHaveTextContent('?search=foo&tab=attachments');
+    await user.click(screen.getByRole('tab', { name: /Details/ }));
+    expect(screen.getByLabelText('Title')).toHaveValue('Ship it!');
+    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments0');
+  });
+
+  it('updates the attachment badge after upload and retains it when switching tabs', async () => {
+    const user = userEvent.setup();
+    const saved = { id: 'a1', filename: 'notes.pdf', mimeType: 'application/pdf', sizeBytes: 4, createdAt: '2026-01-01T12:00:00Z', uploaderId: 'u1' };
+    let uploaded = false;
+    apiMock.mockImplementation((async () => ({ attachments: uploaded ? [saved] : [] })) as typeof api);
+    vi.mocked(uploadAttachment).mockImplementation(async () => { uploaded = true; return { attachment: saved }; });
+    renderModal();
+    await user.click(screen.getByRole('tab', { name: /Attachments/ }));
+    await screen.findByText('No attachments yet');
+    await user.upload(screen.getByLabelText('Choose attachments'), new File(['data'], 'notes.pdf', { type: 'application/pdf' }));
+    await screen.findByText('notes.pdf');
+    await waitFor(() => expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments1'));
+    await user.click(screen.getByRole('tab', { name: 'Details' }));
+    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveTextContent('Attachments1');
   });
 });
 
