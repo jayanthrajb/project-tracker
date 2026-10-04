@@ -95,20 +95,17 @@ export function writeItemFilters(params: URLSearchParams, filters: ItemViewFilte
   return next;
 }
 
-export function constrainFilters(filters: ItemViewFilters, projectId?: string, assigneeId?: string) {
+export function constrainFilters(filters: ItemViewFilters, projectId?: string) {
   const next = { ...filters };
   if (projectId) next.projectId = projectId;
-  if (assigneeId) {
-    next.assigneeId = assigneeId;
-    delete next.unassigned;
-  }
   return next;
 }
 
-export function itemQuery(filters: ItemViewFilters, sort: string) {
+export function itemQuery(filters: ItemViewFilters, sort: string, ownItems = false) {
   const canonical = readItemFilters(writeItemFilters(new URLSearchParams(), filters, sort));
   const params = writeItemFilters(new URLSearchParams(), canonical, sort);
   params.set('pageSize', '100');
+  if (ownItems) params.set('mine', 'true');
   return params.toString();
 }
 

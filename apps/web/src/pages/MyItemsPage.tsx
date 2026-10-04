@@ -77,7 +77,7 @@ export function MyItemsPage({ user }: { user: User }) {
     <div className="grid gap-4">
       <div>
         <h2 className="text-2xl font-semibold">My Items</h2>
-        <p className="text-sm text-slate-500">Everything assigned to you. Saved views always keep your assignment filter.</p>
+        <p className="text-sm text-slate-500">Items assigned to you or reported by you. Filters and saved views only narrow this list.</p>
       </div>
       <SavedViews state={savedViews} user={user} canShare={user.role !== 'DEVELOPER'} />
       <ItemFilters filters={savedViews.filters} sort={savedViews.sort} onChange={savedViews.change} projects={projects.data?.projects} ownItems />

@@ -21,9 +21,12 @@ describe('saved filter serialization', () => {
     expect(itemQuery(filters, 'dueDate-asc')).toContain('pageSize=100');
   });
 
-  it('normalizes invalid enums/sorts and enforces My Items ownership against saved unassigned/other assignee filters', () => {
+  it('normalizes invalid enums/sorts and keeps ownership separate from ordinary filters', () => {
     expect(readItemFilters(new URLSearchParams('status=invalid,OPEN&unassigned=true&assigneeId=u2&dueBefore=bad'))).toEqual({ statuses: ['OPEN'], unassigned: true });
-    expect(constrainFilters({ assigneeId: 'u2', unassigned: true }, undefined, 'u1')).toEqual({ assigneeId: 'u1' });
+    const mine = new URLSearchParams(itemQuery({ assigneeId: 'u2' }, 'score-desc', true));
+    expect(mine.get('mine')).toBe('true');
+    expect(mine.get('assigneeId')).toBe('u2');
+    expect(new URLSearchParams(itemQuery({}, 'score-desc')).has('mine')).toBe(false);
     expect(constrainFilters({ projectId: 'p2' }, 'p1')).toEqual({ projectId: 'p1' });
     expect(readItemSort(new URLSearchParams('sort=priority-asc'))).toBe('score-desc');
     expect(readItemFilters(new URLSearchParams('dueBefore=2026-02-31'))).toEqual({});
