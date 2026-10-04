@@ -169,6 +169,7 @@ model ActivityLog {
 
   @@index([itemId])
   @@index([projectId])
+  @@index([projectId, createdAt])
   @@index([createdAt])
 }
 
