@@ -111,6 +111,15 @@ function createMockPrisma() {
         return item;
       }),
       findUnique: vi.fn(async ({ where }: any) => items.find((item) => item.id === where.id) ?? null),
+      updateMany: vi.fn(async ({ where, data }: {
+        where: { id: string; startedAt: null };
+        data: { startedAt: Date };
+      }) => {
+        const item = items.find((entry) => entry.id === where.id && entry.startedAt === null);
+        if (!item) return { count: 0 };
+        item.startedAt = data.startedAt;
+        return { count: 1 };
+      }),
       update: vi.fn(async ({ where, data }: any) => {
         const index = items.findIndex((item) => item.id === where.id);
         const changes = Object.fromEntries(Object.entries(data).filter(([, value]) => value !== undefined));
@@ -142,6 +151,81 @@ function csrfFrom(setCookie: string[] | string | undefined) {
 }
 
 describe('auth and items routes', () => {
+  it.each(['single', 'bulk'] as const)('preserves the first start across BLOCKED and re-entry via %s updates', async (path) => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const created = await agent.post('/api/items').set('x-csrf-token', csrf).send({
+      projectId: 'project-1', title: 'Start tracking', type: ItemType.TASK, reporterId: 'manager-1',
+    });
+    expect(created.status).toBe(201);
+    expect(created.body.item.status).toBe(ItemStatus.OPEN);
+    expect(created.body.item.startedAt).toBeNull();
+    const id: string = created.body.item.id;
+    const updateStatus = (status: ItemStatus) => path === 'single'
+      ? agent.patch(`/api/items/${id}`).set('x-csrf-token', csrf).send({ status })
+      : agent.patch('/api/items/bulk').set('x-csrf-token', csrf).send({ updates: [{ id, status }] });
+    const responseItem = (response: request.Response) => path === 'single' ? response.body.item : response.body.items[0];
+    const beforeStart = Date.now();
+    const started = await updateStatus(ItemStatus.IN_PROGRESS);
+    expect(started.status).toBe(200);
+    const firstStart: string = responseItem(started).startedAt;
+    expect(new Date(firstStart).getTime()).toBeGreaterThanOrEqual(beforeStart);
+    expect(new Date(firstStart).getTime()).toBeLessThanOrEqual(Date.now());
+
+    const blocked = await updateStatus(ItemStatus.BLOCKED);
+    expect(blocked.status).toBe(200);
+    expect(responseItem(blocked).startedAt).toBe(firstStart);
+    const reentered = await updateStatus(ItemStatus.IN_PROGRESS);
+    expect(reentered.status).toBe(200);
+    expect(responseItem(reentered).startedAt).toBe(firstStart);
+    const backlog = await updateStatus(ItemStatus.BACKLOG);
+    expect(backlog.status).toBe(200);
+    expect(responseItem(backlog).startedAt).toBe(firstStart);
+  });
+
+  it('initializes starts on direct creation and CSV import and accepts backlog in filters and export', async () => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const beforeStart = Date.now();
+    const created = await agent.post('/api/items').set('x-csrf-token', csrf).send({
+      projectId: 'project-1', title: 'Already started', type: ItemType.TASK,
+      reporterId: 'manager-1', status: ItemStatus.IN_PROGRESS,
+    });
+    expect(created.status).toBe(201);
+    expect(new Date(created.body.item.startedAt).getTime()).toBeGreaterThanOrEqual(beforeStart);
+    const imported = await agent.post('/api/items/import').set('x-csrf-token', csrf)
+      .attach('file', Buffer.from(
+        'projectCode,title,type,status,reporterEmail\n'
+        + 'APP,Started import,TASK,IN_PROGRESS,sara.manager@example.com\n'
+        + 'APP,Backlog import,TASK,BACKLOG,sara.manager@example.com\n',
+      ), { filename: 'items.csv', contentType: 'text/csv' });
+    expect(imported.status).toBe(200);
+    expect(imported.body.errors).toEqual([]);
+    expect(imported.body.createdCount).toBe(2);
+    expect(new Date(imported.body.created[0].startedAt).getTime()).toBeGreaterThanOrEqual(beforeStart);
+    expect(new Date(imported.body.created[0].startedAt).getTime()).toBeLessThanOrEqual(Date.now());
+    expect(imported.body.created[1].status).toBe(ItemStatus.BACKLOG);
+    expect(imported.body.created[1].startedAt).toBeNull();
+    const filtered = await agent.get('/api/items?status=BACKLOG');
+    expect(filtered.status).toBe(200);
+    expect(mockPrisma.item.findMany).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { status: { in: [ItemStatus.BACKLOG] } },
+    }));
+    const exported = await agent.get('/api/items/export?status=BACKLOG');
+    expect(exported.status).toBe(200);
+    expect(exported.text).toContain('BACKLOG');
+  });
+
   it('registers, logs in, and returns the current user', async () => {
     vi.resetModules();
     const mockPrisma = createMockPrisma();

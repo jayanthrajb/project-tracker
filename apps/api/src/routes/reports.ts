@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { assertProjectReadable } from '../lib/access.js';
 import { AppError } from '../lib/errors.js';
 import { asyncHandler } from '../lib/http.js';
+import { committedStatuses } from '../lib/item-status.js';
 import { prisma } from '../lib/prisma.js';
 import { requireAuth } from '../middleware/auth.js';
 
@@ -46,7 +47,17 @@ export type AgingResponse = {
 };
 export type ThroughputResponse = {
   interval: 'day' | 'week';
-  points: TimeSeriesPoint[];
+  points: ThroughputPoint[];
+};
+/** Percentile durations are measured in fractional days. */
+export type DurationMetrics = {
+  median: number | null;
+  p85: number | null;
+  sampleCount: number;
+};
+export type ThroughputPoint = TimeSeriesPoint & {
+  cycleTime?: DurationMetrics & { excludedCount: number };
+  leadTime?: DurationMetrics;
 };
 export type BurndownResponse = { points: TimeSeriesPoint[] };
 
@@ -80,7 +91,8 @@ function resolveRange(query: z.infer<typeof rangeQuerySchema>): DateRange {
 }
 
 const reportBuckets: ReportBucket[] = ['1-7 days', '8-30 days', '31+ days'];
-const openStatusWhere = { not: ItemStatus.DONE };
+const openStatusWhere = { in: committedStatuses };
+const committedStatusSql = Prisma.join(committedStatuses.map((status) => Prisma.sql`${status}::"ItemStatus"`));
 const priorities = Object.values(ItemPriority);
 const statuses = Object.values(ItemStatus);
 
@@ -177,7 +189,7 @@ reportsRouter.get('/:id/reports/overdue', asyncHandler(async (req, res) => {
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
     WHERE i."projectId" = ${projectId}
-      AND i."status" <> ${ItemStatus.DONE}::"ItemStatus"
+      AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."dueDate" < (${range.to}::timestamptz AT TIME ZONE 'UTC')
     GROUP BY bucket
@@ -191,7 +203,7 @@ reportsRouter.get('/:id/reports/overdue', asyncHandler(async (req, res) => {
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
-      AND i."status" <> ${ItemStatus.DONE}::"ItemStatus"
+      AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."dueDate" < (${range.to}::timestamptz AT TIME ZONE 'UTC')
     ORDER BY i."dueDate" ASC, i."id" ASC
@@ -217,7 +229,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
       ELSE '31+ days'
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
-    WHERE i."projectId" = ${projectId} AND i."status" <> ${ItemStatus.DONE}::"ItemStatus"
+    WHERE i."projectId" = ${projectId} AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
     GROUP BY bucket
     UNION ALL
@@ -227,7 +239,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
       ELSE '31+ days'
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
-    WHERE i."projectId" = ${projectId} AND i."status" <> ${ItemStatus.DONE}::"ItemStatus"
+    WHERE i."projectId" = ${projectId} AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
     GROUP BY bucket
   `);
@@ -240,7 +252,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
-      AND i."status" <> ${ItemStatus.DONE}::"ItemStatus"
+      AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."updatedAt" < (${new Date(range.toExclusive.getTime() - 7 * 86_400_000)}::timestamptz AT TIME ZONE 'UTC')
     ORDER BY i."updatedAt" ASC, i."id" ASC
@@ -262,7 +274,17 @@ reportsRouter.get('/:id/reports/throughput', asyncHandler(async (req, res) => {
   if (!req.user) throw new AppError(401, 'Authentication required');
   await assertProjectReadable(projectId, req.user);
   const range = resolveRange(query);
-  const points = await prisma.$queryRaw<{ bucket: string; value: bigint }[]>(Prisma.sql`
+  const points = await prisma.$queryRaw<{
+    bucket: string;
+    value: bigint;
+    cycleMedian: number | null;
+    cycleP85: number | null;
+    cycleSampleCount: bigint;
+    cycleExcludedCount: bigint;
+    leadMedian: number | null;
+    leadP85: number | null;
+    leadSampleCount: bigint;
+  }[]>(Prisma.sql`
     WITH buckets AS (
       SELECT generate_series(
         date_trunc(${query.interval}, ${range.from}::timestamptz AT TIME ZONE 'UTC'),
@@ -279,15 +301,56 @@ reportsRouter.get('/:id/reports/throughput', asyncHandler(async (req, res) => {
         AND a."newValue" = ${ItemStatus.DONE}
         AND a."action" IN ('STATUS_CHANGED'::"ActivityAction", 'BULK_UPDATED'::"ActivityAction")
       GROUP BY bucket
+    ), durations AS (
+      SELECT date_trunc(${query.interval}, i."closedAt") AS bucket,
+        percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i."closedAt" - i."startedAt")) / 86400.0
+        ) AS "cycleMedian",
+        percentile_cont(0.85) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i."closedAt" - i."startedAt")) / 86400.0
+        ) AS "cycleP85",
+        COUNT(i."startedAt")::bigint AS "cycleSampleCount",
+        COUNT(*) FILTER (WHERE i."startedAt" IS NULL)::bigint AS "cycleExcludedCount",
+        percentile_cont(0.5) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i."closedAt" - i."createdAt")) / 86400.0
+        ) AS "leadMedian",
+        percentile_cont(0.85) WITHIN GROUP (
+          ORDER BY EXTRACT(EPOCH FROM (i."closedAt" - i."createdAt")) / 86400.0
+        ) AS "leadP85",
+        COUNT(*)::bigint AS "leadSampleCount"
+      FROM "Item" i
+      WHERE i."projectId" = ${projectId}
+        AND i."closedAt" >= (${range.from}::timestamptz AT TIME ZONE 'UTC')
+        AND i."closedAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
+      GROUP BY bucket
     )
     SELECT to_char(buckets.bucket, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS bucket,
-      COALESCE(totals.value, 0)::bigint AS value
-    FROM buckets LEFT JOIN totals USING (bucket)
+      COALESCE(totals.value, 0)::bigint AS value,
+      durations."cycleMedian", durations."cycleP85",
+      COALESCE(durations."cycleSampleCount", 0)::bigint AS "cycleSampleCount",
+      COALESCE(durations."cycleExcludedCount", 0)::bigint AS "cycleExcludedCount",
+      durations."leadMedian", durations."leadP85",
+      COALESCE(durations."leadSampleCount", 0)::bigint AS "leadSampleCount"
+    FROM buckets LEFT JOIN totals USING (bucket) LEFT JOIN durations USING (bucket)
     ORDER BY buckets.bucket
   `);
   const response: ThroughputResponse = {
     interval: query.interval,
-    points: points.map((point) => ({ bucket: point.bucket, value: Number(point.value) })),
+    points: points.map((point) => ({
+      bucket: point.bucket,
+      value: Number(point.value),
+      cycleTime: {
+        median: point.cycleMedian,
+        p85: point.cycleP85,
+        sampleCount: Number(point.cycleSampleCount),
+        excludedCount: Number(point.cycleExcludedCount),
+      },
+      leadTime: {
+        median: point.leadMedian,
+        p85: point.leadP85,
+        sampleCount: Number(point.leadSampleCount),
+      },
+    })),
   };
   res.json(response);
 }));
@@ -325,7 +388,7 @@ reportsRouter.get('/:id/reports/burndown', asyncHandler(async (req, res) => {
       JOIN "Item" i ON i."projectId" = ${projectId} AND i."createdAt" < s.cutoff
     )
     SELECT s.day::text AS bucket,
-      COUNT(h."id") FILTER (WHERE h.status <> ${ItemStatus.DONE})::bigint AS value
+      COUNT(h."id") FILTER (WHERE h.status IN (${Prisma.join(committedStatuses)}))::bigint AS value
     FROM snapshots s
     LEFT JOIN historical_status h ON h.day = s.day
     GROUP BY s.day
