@@ -1,5 +1,6 @@
 import { ItemPriority, ItemStatus, Prisma } from '@prisma/client';
 import { Router } from 'express';
+import { rateLimit } from 'express-rate-limit';
 import { z } from 'zod';
 
 import { assertProjectReadable } from '../lib/access.js';
@@ -89,7 +90,13 @@ function countByBucket(rows: { bucket: string; value: number | bigint }[]) {
 }
 
 export const reportsRouter = Router();
-reportsRouter.use(requireAuth);
+reportsRouter.use(rateLimit({
+  windowMs: 60_000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, _res, next) => next(new AppError(429, 'Too many requests, please try again later.')),
+}), requireAuth);
 
 reportsRouter.get('/:id/reports/status-breakdown', asyncHandler(async (req, res) => {
   const projectId = z.string().min(1).parse(req.params.id);
