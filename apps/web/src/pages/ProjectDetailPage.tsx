@@ -10,6 +10,7 @@ import { SavedViews } from '../components/SavedViews';
 import { api } from '../lib/api';
 import { findItem } from '../lib/findItem';
 import { useSavedViews } from '../lib/useSavedViews';
+import { filterOptions } from '../lib/itemViewFilters';
 import type { ApiError } from '../lib/api';
 import type { Item, ItemPriority, ItemStatus, Project, User } from '../types';
 
@@ -30,7 +31,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
   const [bulkActionType, setBulkActionType] = useState<BulkActionType>('status');
   const [bulkActionValue, setBulkActionValue] = useState('IN_PROGRESS');
   const queryClient = useQueryClient();
-  const savedViews = useSavedViews(user, projectId);
+  const savedViews = useSavedViews(user, projectId, false, true);
   const itemParam = searchParams.get('item');
 
   const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: () => api<{ project: Project }>(`/projects/${projectId}`) });
@@ -327,7 +328,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
                 </select>
               ) : bulkActionType === 'status' ? (
                 <select className="rounded border border-slate-300 px-2 py-1" value={bulkActionValue} onChange={(event) => setBulkActionValue(event.target.value)}>
-                  {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((option) => <option key={option}>{option}</option>)}
+                  {filterOptions.status.map((option) => <option key={option}>{option}</option>)}
                 </select>
               ) : bulkActionType === 'priority' ? (
                 <select className="rounded border border-slate-300 px-2 py-1" value={bulkActionValue} onChange={(event) => setBulkActionValue(event.target.value)}>

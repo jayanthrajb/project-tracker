@@ -17,7 +17,7 @@ const project: Project = { id: 'p1', code: 'APO', name: 'Apollo', description: '
 const item: Item = {
   id: 'i1', projectId: 'p1', key: 'APO-1', title: 'Listed item', description: '', type: 'TASK', status: 'OPEN', priority: 'P2',
   risk: 'LOW', assigneeId: null, reporterId: 'u1', dueDate: null, estimateHours: null, spentHours: 0, tags: [],
-  createdAt: '', updatedAt: '', closedAt: null, score: 1, project, assignee: null, reporter: user,
+  createdAt: '', updatedAt: '', closedAt: null, startedAt: null, score: 1, project, assignee: null, reporter: user,
 };
 const hiddenItem: Item = { ...item, id: 'i2', key: 'APO-2', title: 'Filtered item' };
 const activity: ActivityEntry = {
@@ -61,6 +61,35 @@ beforeEach(() => {
 });
 
 describe('Project activity integration', () => {
+  it('defaults to backlog and active work, serializes the filter, and allows clearing it', async () => {
+    const interaction = userEvent.setup();
+    mount();
+    await screen.findByRole('button', { name: 'Listed item' });
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('status='));
+    expect(screen.getByLabelText('BACKLOG')).toBeChecked();
+    expect(screen.getByLabelText('DONE')).not.toBeChecked();
+    const requests = apiMock.mock.calls.filter(([path]) => path.startsWith('/items?'));
+    expect(requests.length).toBeGreaterThan(0);
+    for (const [path] of requests) {
+      const statuses = new URLSearchParams(path.split('?')[1]).get('status')?.split(',');
+      expect(statuses).toContain('BACKLOG');
+      expect(statuses).not.toContain('DONE');
+    }
+    for (const status of ['BACKLOG', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW']) await interaction.click(screen.getByLabelText(status));
+    await waitFor(() => expect(new URLSearchParams(screen.getByTestId('location').textContent ?? '').has('status')).toBe(false));
+    expect(screen.getByLabelText('BACKLOG')).not.toBeChecked();
+    await waitFor(() => expect(apiMock.mock.calls.some(([path]) => path.startsWith('/items?') && !new URLSearchParams(path.split('?')[1]).has('status'))).toBe(true));
+  });
+
+  it('honors an explicitly shared DONE filter over the project default', async () => {
+    mount('/projects/p1?status=DONE');
+    await screen.findByRole('button', { name: 'Listed item' });
+    expect(screen.getByLabelText('DONE')).toBeChecked();
+    expect(screen.getByLabelText('BACKLOG')).not.toBeChecked();
+    const requests = apiMock.mock.calls.filter(([path]) => path.startsWith('/items?'));
+    expect(requests.every(([path]) => new URLSearchParams(path.split('?')[1]).get('status') === 'DONE')).toBe(true);
+  });
+
   it('opens and closes an item from saved filters while preserving filters, view, drafts and selection and resetting stale tabs', async () => {
     const original = apiMock.getMockImplementation()!;
     apiMock.mockImplementation((async (path: string) => {

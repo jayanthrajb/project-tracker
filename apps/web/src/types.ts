@@ -1,7 +1,7 @@
 export type Role = 'ADMIN' | 'MANAGER' | 'DEVELOPER';
 export type ProjectStatus = 'ACTIVE' | 'ON_HOLD' | 'COMPLETED' | 'ARCHIVED';
 export type ItemType = 'TASK' | 'BUG' | 'RISK' | 'ENHANCEMENT';
-export type ItemStatus = 'OPEN' | 'IN_PROGRESS' | 'BLOCKED' | 'IN_REVIEW' | 'DONE';
+export type ItemStatus = 'BACKLOG' | 'OPEN' | 'IN_PROGRESS' | 'BLOCKED' | 'IN_REVIEW' | 'DONE';
 export type ItemPriority = 'P0' | 'P1' | 'P2' | 'P3';
 export type ItemRisk = 'LOW' | 'MEDIUM' | 'HIGH';
 
@@ -47,6 +47,7 @@ export interface Item {
   createdAt: string;
   updatedAt: string;
   closedAt: string | null;
+  startedAt: string | null;
   score: number;
   project: { id: string; name: string; code: string };
   assignee: User | null;

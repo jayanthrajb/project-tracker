@@ -331,7 +331,23 @@ export default function ReportsPage({ user }: { user: User }) {
         </label>} exportReport={() => {
           if (throughputQuery.data) exportRows('throughput-velocity', projectName, range, ['bucket', 'completed'], throughputQuery.data.points.map((point) => ({ bucket: dateLabel(point.bucket), completed: point.value })));
         }}>
-          {throughputQuery.data && <Suspense fallback={chartFallback}><BarChart data={throughputQuery.data.points.map((point) => ({ label: dateLabel(point.bucket), value: point.value }))} ariaLabel="Completed items per time bucket" /></Suspense>}
+          {throughputQuery.data && <div className="grid gap-3">
+            <Suspense fallback={chartFallback}><BarChart data={throughputQuery.data.points.map((point) => ({ label: dateLabel(point.bucket), value: point.value }))} ariaLabel="Completed items per time bucket" /></Suspense>
+            <div className="overflow-x-auto">
+              <table aria-label="Cycle and lead time by bucket" className="min-w-full text-left text-xs">
+                <caption className="mb-2 text-left text-slate-500">Durations in days per bucket · Cycle: actual start → finish · Lead: created → finish</caption>
+                <thead className="text-slate-500"><tr>{['Bucket', 'Cycle median', 'Cycle p85', 'Lead median', 'Lead p85', 'Samples / exclusions'].map((heading) => <th key={heading} className="px-2 py-2 font-medium">{heading}</th>)}</tr></thead>
+                <tbody>{throughputQuery.data.points.map((point) => <tr key={point.bucket} className="border-t border-slate-100">
+                  <th scope="row" className="px-2 py-2 font-medium">{dateLabel(point.bucket)}</th>
+                  {[point.cycleTime?.median, point.cycleTime?.p85, point.leadTime?.median, point.leadTime?.p85].map((value, index) => <td key={index} className="px-2 py-2">{value == null ? 'No data' : value.toFixed(2)}</td>)}
+                  <td className="px-2 py-2 text-slate-500">
+                    Cycle: {point.cycleTime?.sampleCount ?? 0}; lead: {point.leadTime?.sampleCount ?? 0}
+                    {Boolean(point.cycleTime?.excludedCount) && <p>{point.cycleTime?.excludedCount} completed items excluded from cycle time: missing actual start (startedAt).</p>}
+                  </td>
+                </tr>)}</tbody>
+              </table>
+            </div>
+          </div>}
         </ReportCard>
 
         <ReportCard title="Burndown" description="Remaining open items by day across the selected range." loading={burndownQuery.isLoading} error={burndownQuery.error} empty={!burndownQuery.data || isEmptyTimeSeries(burndownQuery.data.points)} retry={() => void burndownQuery.refetch()} exportReport={() => {

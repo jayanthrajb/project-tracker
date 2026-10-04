@@ -1,5 +1,6 @@
 import { cn, formatDate } from '../lib/utils';
-import { priorityColors, riskColors } from '../lib/itemColors';
+import { backlogColor, priorityColors, riskColors } from '../lib/itemColors';
+import { filterOptions } from '../lib/itemViewFilters';
 import type { Item, ItemPriority, ItemStatus, User } from '../types';
 
 export function ItemsTable({
@@ -76,8 +77,8 @@ export function ItemsTable({
                 </td>
                 <td className="px-3 py-3"><span className={cn('rounded-full px-2 py-1 text-xs font-semibold', riskColors[merged.risk])}>{merged.risk}</span></td>
                 <td className="px-3 py-3">
-                  <select value={merged.status} onChange={(event) => onDraftChange(item, { status: event.target.value as ItemStatus })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
-                    {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((option) => <option key={option}>{option}</option>)}
+                  <select value={merged.status} onChange={(event) => onDraftChange(item, { status: event.target.value as ItemStatus })} className={cn('rounded-lg border border-slate-300 px-2 py-1 text-xs', merged.status === 'BACKLOG' && backlogColor)}>
+                    {filterOptions.status.map((option) => <option key={option}>{option}</option>)}
                   </select>
                 </td>
                 <td className="px-3 py-3">
@@ -117,11 +118,11 @@ export function ItemsBoard({
   onDropStatus: (item: Item, status: ItemStatus) => void;
   onOpen: (item: Item) => void;
 }) {
-  const columns: ItemStatus[] = ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'];
+  const columns = filterOptions.status;
   return (
-    <div className="grid gap-4 xl:grid-cols-5">
+    <div className="grid gap-4 xl:grid-cols-6">
       {columns.map((status) => (
-        <div key={status} className="rounded-2xl border border-slate-200 bg-white p-3" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
+        <div key={status} className={cn('rounded-2xl border border-slate-200 bg-white p-3', status === 'BACKLOG' && backlogColor)} onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
           const itemId = event.dataTransfer.getData('text/plain');
           const item = items.find((entry) => entry.id === itemId);
           if (item) onDropStatus(item, status);

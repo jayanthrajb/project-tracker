@@ -14,3 +14,4 @@ export const riskColors: Record<ItemRisk, string> = {
 };
 
 export const neutralColor = 'bg-slate-100 text-slate-700';
+export const backlogColor = 'border-dashed border-slate-300 bg-slate-50 text-slate-500';

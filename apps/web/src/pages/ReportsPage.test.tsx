@@ -20,7 +20,7 @@ const project: Project = { id: 'p1', code: 'APO', name: 'Apollo', description: '
 const item: Item = {
   id: 'i1', projectId: 'p1', key: 'APO-1', title: 'Overdue bug', description: '', type: 'BUG', status: 'OPEN', priority: 'P1',
   risk: 'LOW', assigneeId: null, reporterId: 'u1', dueDate: '2026-09-01T00:00:00.000Z', estimateHours: null, spentHours: 0, tags: [],
-  createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', closedAt: null, score: 1,
+  createdAt: '2026-08-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z', closedAt: null, startedAt: null, score: 1,
   project: { id: 'p1', name: 'Apollo', code: 'APO' }, assignee: null, reporter: user,
 };
 
@@ -91,6 +91,28 @@ beforeEach(() => {
 });
 
 describe('ReportsPage', () => {
+  it('shows per-bucket median/p85 durations, sample counts and missing-start caveats without changing the chart', async () => {
+    const original = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string) => {
+      if (path.includes('/reports/throughput')) return {
+        interval: 'day', points: [
+          { bucket: '2026-10-01T00:00:00Z', value: 3, cycleTime: { median: 1.5, p85: 2.8, sampleCount: 2, excludedCount: 1 }, leadTime: { median: 4.2, p85: 6.7, sampleCount: 3 } },
+          { bucket: '2026-10-02T00:00:00Z', value: 1, cycleTime: { median: null, p85: null, sampleCount: 0, excludedCount: 1 }, leadTime: { median: 0, p85: 0, sampleCount: 1 } },
+        ],
+      } satisfies ThroughputResponse;
+      return original(path);
+    }) as typeof api);
+    mount();
+    const table = await screen.findByRole('table', { name: 'Cycle and lead time by bucket' });
+    for (const heading of ['Cycle median', 'Cycle p85', 'Lead median', 'Lead p85']) expect(within(table).getByRole('columnheader', { name: heading })).toBeInTheDocument();
+    for (const value of ['1.50', '2.80', '4.20', '6.70']) expect(within(table).getByText(value)).toBeInTheDocument();
+    expect(within(table).getByText('Cycle: 2; lead: 3')).toBeInTheDocument();
+    expect(within(table).getAllByText(/1 completed items excluded from cycle time: missing actual start/)).toHaveLength(2);
+    expect(within(table).getAllByText('No data')).toHaveLength(2);
+    expect(within(table).getAllByText('0.00')).toHaveLength(2);
+    expect(await screen.findByRole('img', { name: 'Completed items per time bucket' })).toBeInTheDocument();
+  });
+
   it('renders all six reports, preserves both aging measures, and exposes chart alternatives', async () => {
     mount();
     expect(await screen.findByRole('img', { name: 'Items by status' })).toBeInTheDocument();
