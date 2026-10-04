@@ -29,10 +29,10 @@ export type ReportItem = {
   title: string;
   status: ItemStatus;
   priority: ItemPriority;
-  dueDate: Date | null;
+  dueDate: string | null;
   assigneeName: string | null;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt: string;
+  updatedAt: string;
 };
 export type OverdueResponse = {
   buckets: { bucket: ReportBucket; value: number }[];
@@ -176,8 +176,11 @@ reportsRouter.get('/:id/reports/overdue', asyncHandler(async (req, res) => {
     GROUP BY bucket
   `);
   const mostOverdue = await prisma.$queryRaw<ReportItem[]>(Prisma.sql`
-    SELECT i."id", i."key", i."title", i."status", i."priority", i."dueDate",
-      u."name" AS "assigneeName", i."createdAt", i."updatedAt"
+    SELECT i."id", i."key", i."title", i."status", i."priority",
+      to_char(i."dueDate", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "dueDate",
+      u."name" AS "assigneeName",
+      to_char(i."createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+      to_char(i."updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
@@ -222,8 +225,11 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
     GROUP BY bucket
   `);
   const staleItems = await prisma.$queryRaw<ReportItem[]>(Prisma.sql`
-    SELECT i."id", i."key", i."title", i."status", i."priority", i."dueDate",
-      u."name" AS "assigneeName", i."createdAt", i."updatedAt"
+    SELECT i."id", i."key", i."title", i."status", i."priority",
+      to_char(i."dueDate", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "dueDate",
+      u."name" AS "assigneeName",
+      to_char(i."createdAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "createdAt",
+      to_char(i."updatedAt", 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"') AS "updatedAt"
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
