@@ -14,6 +14,7 @@ import { canEditItem } from '../lib/permissions.js';
 import { recordItemChanges, recordItemCreation, recordItemDeletion } from '../lib/activity.js';
 import { notifyItemChanges, notifyItemCreated } from '../lib/notifications.js';
 import { storage } from '../lib/storage/index.js';
+import { itemStartData } from '../lib/item-status.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -202,6 +203,7 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
         spentHours: input.spentHours,
         tags: input.tags,
         closedAt: input.status === ItemStatus.DONE ? new Date() : null,
+        ...await itemStartData(tx, input.status),
       },
       include: itemInclude,
     });
@@ -271,6 +273,7 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
           spentHours: update.spentHours,
           tags: update.tags,
           closedAt: update.status ? (update.status === ItemStatus.DONE ? new Date() : null) : undefined,
+          ...await itemStartData(tx, update.status, update.id),
         },
         include: itemInclude,
       });
@@ -326,6 +329,7 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
         spentHours: input.spentHours,
         tags: input.tags,
         closedAt: input.status ? (input.status === ItemStatus.DONE ? new Date() : null) : undefined,
+        ...await itemStartData(tx, input.status, itemId),
       },
       include: itemInclude,
     });
@@ -422,6 +426,7 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
           spentHours: data.spentHours ?? 0,
           tags: data.tags ? data.tags.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
           closedAt: data.status === ItemStatus.DONE ? new Date() : null,
+          ...await itemStartData(tx, data.status),
         },
         include: itemInclude,
       });

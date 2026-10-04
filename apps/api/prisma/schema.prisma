@@ -28,6 +28,7 @@ enum ItemType {
 }
 
 enum ItemStatus {
+  BACKLOG
   OPEN
   IN_PROGRESS
   BLOCKED
@@ -139,6 +140,7 @@ model Item {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   closedAt      DateTime?
+  startedAt     DateTime?
   project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   assignee      User?          @relation("ItemAssignee", fields: [assigneeId], references: [id])
   reporter      User           @relation("ItemReporter", fields: [reporterId], references: [id])
