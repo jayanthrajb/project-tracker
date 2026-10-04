@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 
 import { ItemFormModal } from '../components/ItemFormModal';
@@ -292,6 +292,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
               </button>
             )}
             {canCreateItems && <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white" onClick={() => setCreating(true)}>New item</button>}
+            <Link className="rounded-lg border border-slate-300 px-3 py-2 text-sm hover:bg-slate-50" to={`/projects/${encodeURIComponent(projectId)}/reports`}>Reports</Link>
           </div>
         </div>
         <div className="mt-4 grid gap-3">

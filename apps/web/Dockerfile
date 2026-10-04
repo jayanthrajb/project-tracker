@@ -11,6 +11,7 @@ RUN npm ci
 
 COPY apps/web ./apps/web
 COPY apps/api/src/routes/attachments.ts ./apps/api/src/routes/attachments.ts
+COPY apps/api/src ./apps/api/src
 RUN npm run build -w @project-tracker/web
 
 FROM nginx:alpine AS runtime
