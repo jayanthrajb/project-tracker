@@ -5,8 +5,11 @@ import { toast } from 'react-hot-toast';
 
 import { ItemFormModal } from '../components/ItemFormModal';
 import { ItemsBoard, ItemsTable } from '../components/ItemsTable';
+import { ItemFilters } from '../components/ItemFilters';
+import { SavedViews } from '../components/SavedViews';
 import { api } from '../lib/api';
 import { findItem } from '../lib/findItem';
+import { useSavedViews } from '../lib/useSavedViews';
 import type { ApiError } from '../lib/api';
 import type { Item, ItemPriority, ItemStatus, Project, User } from '../types';
 
@@ -27,15 +30,14 @@ export function ProjectDetailPage({ user }: { user: User }) {
   const [bulkActionType, setBulkActionType] = useState<BulkActionType>('status');
   const [bulkActionValue, setBulkActionValue] = useState('IN_PROGRESS');
   const queryClient = useQueryClient();
-  const search = searchParams.get('search') ?? '';
-  const status = searchParams.get('status') ?? '';
+  const savedViews = useSavedViews(user, projectId);
   const itemParam = searchParams.get('item');
 
   const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: () => api<{ project: Project }>(`/projects/${projectId}`) });
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<{ projects: Project[]; users: User[] }>('/projects') });
   const itemsQuery = useQuery({
-    queryKey: ['items', projectId, search, status],
-    queryFn: () => api<{ items: Item[]; total: number }>(`/items?projectId=${projectId}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&sort=score-desc&pageSize=100`),
+    queryKey: ['items', projectId, savedViews.query],
+    queryFn: () => api<{ items: Item[]; total: number }>(`/items?${savedViews.query}`),
   });
   const linkedItem = useQuery({
     queryKey: ['item', itemParam],
@@ -164,7 +166,11 @@ export function ProjectDetailPage({ user }: { user: User }) {
 
   // Resolve deep links even when the item is outside the filtered/paginated table.
   useEffect(() => {
-    if (!itemParam || !itemsQuery.data) return;
+    if (!itemParam) {
+      setActiveItem(undefined);
+      return;
+    }
+    if (!itemsQuery.data) return;
     const listed = itemsQuery.data.items.find((entry) => entry.id === itemParam);
     const error = linkedItem.error as ApiError | null;
     if (!listed && linkedItem.isError && (error?.status === 404 || error?.status === 403)) {
@@ -275,11 +281,6 @@ export function ProjectDetailPage({ user }: { user: User }) {
             <p className="mt-2 text-sm text-slate-600">{project.description}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <input className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={search} onChange={(event) => setSearchParams((params) => { const next = new URLSearchParams(params); next.set('search', event.target.value); return next; })} placeholder="Search in project" />
-            <select className="rounded-lg border border-slate-300 px-3 py-2 text-sm" value={status} onChange={(event) => setSearchParams((params) => { const next = new URLSearchParams(params); if (event.target.value) next.set('status', event.target.value); else next.delete('status'); return next; })}>
-              <option value="">All statuses</option>
-              {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((option) => <option key={option}>{option}</option>)}
-            </select>
             <button className="rounded-lg border border-slate-300 px-3 py-2 text-sm" onClick={() => setView(view === 'table' ? 'board' : 'table')}>{view === 'table' ? 'Board view' : 'Table view'}</button>
             <label className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm">
               <input type="checkbox" checked={freezeOrderWhileEditing} onChange={(event) => setFreezeOrderWhileEditing(event.target.checked)} />
@@ -292,6 +293,10 @@ export function ProjectDetailPage({ user }: { user: User }) {
             )}
             {canCreateItems && <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white" onClick={() => setCreating(true)}>New item</button>}
           </div>
+        </div>
+        <div className="mt-4 grid gap-3">
+          <SavedViews state={savedViews} user={user} projectId={projectId} canShare={canCreateItems} />
+          <ItemFilters filters={savedViews.filters} sort={savedViews.sort} onChange={savedViews.change} users={users} searchPlaceholder="Search in project" />
         </div>
       </div>
 

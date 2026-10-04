@@ -13,16 +13,13 @@ import { toDateInput } from '../lib/utils';
 // stay out of the initial bundle.
 const CommentsTab = lazy(() => import('./CommentsTab').then((module) => ({ default: module.CommentsTab })));
 const HistoryTab = lazy(() => import('./HistoryTab').then((module) => ({ default: module.HistoryTab })));
+const AttachmentsTab = lazy(() => import('./AttachmentsTab').then((module) => ({ default: module.AttachmentsTab })));
 
 export const ITEM_TABS = ['details', 'comments', 'history', 'attachments'] as const;
 export type ItemTab = (typeof ITEM_TABS)[number];
 
 function isItemTab(value: string | null): value is ItemTab {
   return value !== null && (ITEM_TABS as readonly string[]).includes(value);
-}
-
-function ComingSoon() {
-  return <div className="flex min-h-40 items-center justify-center text-sm text-slate-400">Coming soon</div>;
 }
 
 const schema = z.object({
@@ -72,6 +69,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
   const dialogRef = useRef<HTMLDivElement>(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const [commentCount, setCommentCount] = useState<number | null>(null);
+  const [attachmentCount, setAttachmentCount] = useState<number | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   useFocusTrap(dialogRef);
 
@@ -253,7 +251,11 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
                 ),
               },
               { id: 'history', label: 'History', content: <Suspense fallback={<div className="py-6 text-sm text-slate-500">Loading history…</div>}>{item && <HistoryTab itemId={item.id} users={users} />}</Suspense> },
-              { id: 'attachments', label: 'Attachments', content: <ComingSoon /> },
+              {
+                id: 'attachments',
+                label: <>Attachments{attachmentCount !== null && <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-medium text-slate-700">{attachmentCount}</span>}</>,
+                content: <Suspense fallback={<div className="py-6 text-sm text-slate-500">Loading attachments…</div>}><AttachmentsTab key={item.id} item={item} currentUser={currentUser} onCountChange={setAttachmentCount} /></Suspense>,
+              },
             ]}
           />
         ) : (
