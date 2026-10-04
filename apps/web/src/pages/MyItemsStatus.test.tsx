@@ -44,6 +44,30 @@ beforeEach(() => {
 });
 
 describe('My Items inline status', () => {
+  it('keeps an in-flight item disabled across filter changes and refreshes only the originating and current views', async () => {
+    const client = mount();
+    const invalidate = vi.spyOn(client, 'invalidateQueries');
+    let select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
+    await waitFor(() => expect(select).toBeEnabled());
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    await waitFor(() => expect(select).toHaveValue('IN_PROGRESS'));
+    fireEvent.click(screen.getByLabelText('LOW'));
+    await waitFor(() => expect(apiMock.mock.calls.filter(([path]) => path.startsWith('/items?'))).toHaveLength(2));
+    select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
+    expect(select).toBeDisabled();
+    expect(select).toHaveValue('IN_PROGRESS');
+    fireEvent.change(select, { target: { value: 'DONE' } });
+    expect(apiMock.mock.calls.filter(([, init]) => init?.method === 'PATCH')).toHaveLength(1);
+    listedItems = [{ ...item, status: 'IN_PROGRESS' }];
+    resolveUpdate({ item: listedItems[0] });
+    await waitFor(() => expect(select).toBeEnabled());
+    expect(select).toHaveValue('IN_PROGRESS');
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(4));
+    const listKeys = invalidate.mock.calls.filter(([options]) => options?.queryKey?.[0] === 'my-items');
+    expect(listKeys).toHaveLength(2);
+    expect(listKeys.every(([options]) => options?.exact)).toBe(true);
+  });
+
   it('optimistically updates before success, sends only status and invalidates scoped queries', async () => {
     const client = mount();
     const invalidate = vi.spyOn(client, 'invalidateQueries');

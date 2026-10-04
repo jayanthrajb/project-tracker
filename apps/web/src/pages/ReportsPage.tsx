@@ -324,7 +324,7 @@ export default function ReportsPage({ user }: { user: User }) {
           </div>}
         </ReportCard>
 
-        <ReportCard title="Throughput / velocity" description="Completed items per time bucket." loading={throughputQuery.isLoading} error={throughputQuery.error} empty={!throughputQuery.data || isEmptyTimeSeries(throughputQuery.data.points)} retry={() => void throughputQuery.refetch()} controls={<label className="flex items-center gap-2 text-xs text-slate-600">Bucket
+        <ReportCard title="Throughput / velocity" description="Completed items per time bucket." loading={throughputQuery.isLoading} error={throughputQuery.error} empty={!throughputQuery.data || (isEmptyTimeSeries(throughputQuery.data.points) && !throughputQuery.data.points.some((point) => point.cycleTime?.sampleCount || point.cycleTime?.excludedCount || point.leadTime?.sampleCount))} retry={() => void throughputQuery.refetch()} controls={<label className="flex items-center gap-2 text-xs text-slate-600">Bucket
           <select aria-label="Throughput interval" className={inputClass} value={interval} onChange={(event) => updateParams({ interval: event.target.value })}>
             <option value="day">Day</option><option value="week">Week</option>
           </select>

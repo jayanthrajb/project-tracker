@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
@@ -19,6 +19,8 @@ export function MyItemsPage({ user }: { user: User }) {
   const client = useQueryClient();
   const [recent, setRecent] = useState<Record<string, RecentUpdate>>({});
   const queryKey = ['my-items', user.id, savedViews.query] as const;
+  const currentQuery = useRef(savedViews.query);
+  useEffect(() => { currentQuery.current = savedViews.query; }, [savedViews.query]);
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<{ projects: Project[]; users: User[] }>('/projects') });
   const items = useQuery({ queryKey, queryFn: () => api<ItemsResponse>(`/items?${savedViews.query}`) });
   useEffect(() => {
@@ -59,10 +61,13 @@ export function MyItemsPage({ user }: { user: User }) {
     },
     onSettled: (_data, _error, { query }) => {
       void client.invalidateQueries({ queryKey: ['my-items', user.id, query], exact: true });
+      if (currentQuery.current !== query) {
+        void client.invalidateQueries({ queryKey: ['my-items', user.id, currentQuery.current], exact: true });
+      }
     },
   });
 
-  const visibleItems = (items.data?.items ?? []).map((item) => recent[item.id]?.query === savedViews.query ? recent[item.id].item : item);
+  const visibleItems = (items.data?.items ?? []).map((item) => recent[item.id]?.item ?? item);
   for (const update of Object.values(recent)) {
     if (update.query === savedViews.query && !visibleItems.some((item) => item.id === update.item.id)) visibleItems.push(update.item);
   }
@@ -93,12 +98,12 @@ export function MyItemsPage({ user }: { user: User }) {
                 <div className="text-xs text-slate-500">{item.key} · {item.project.code}</div>
                 <div className="font-medium">{item.title}</div>
                 <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-slate-500">
-                  <select aria-label={`Status for ${item.key}`} value={item.status} disabled={!canUpdate || update?.pending}
+                  <select aria-label={`Status for ${item.key}`} value={item.status} disabled={!canUpdate || recent[item.id]?.pending}
                     title={!canUpdate ? 'You do not have permission to update this item.' : undefined}
                     className={cn('rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:opacity-60', item.status === 'BACKLOG' && backlogColor)}
                     onChange={(event) => {
                       const status = event.target.value as ItemStatus;
-                      if (status !== item.status) updateStatus.mutate({ item, status, query: savedViews.query, outsideFilter: Boolean(savedViews.filters.statuses?.length && !savedViews.filters.statuses.includes(status)) });
+                      if (!recent[item.id]?.pending && status !== item.status) updateStatus.mutate({ item, status, query: savedViews.query, outsideFilter: Boolean(savedViews.filters.statuses?.length && !savedViews.filters.statuses.includes(status)) });
                     }}>
                     {filterOptions.status.map((status) => <option key={status}>{status}</option>)}
                   </select>

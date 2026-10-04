@@ -91,6 +91,20 @@ beforeEach(() => {
 });
 
 describe('ReportsPage', () => {
+  it('keeps duration samples visible when no completion events contribute to throughput', async () => {
+    const original = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string) => {
+      if (path.includes('/reports/throughput')) return {
+        interval: 'day', points: [{ bucket: '2026-10-01T00:00:00Z', value: 0, cycleTime: { median: null, p85: null, sampleCount: 0, excludedCount: 1 }, leadTime: { median: 3, p85: 3, sampleCount: 1 } }],
+      } satisfies ThroughputResponse;
+      return original(path);
+    }) as typeof api);
+    mount();
+    const table = await screen.findByRole('table', { name: 'Cycle and lead time by bucket' });
+    expect(within(table).getAllByText('3.00')).toHaveLength(2);
+    expect(within(table).getByText(/missing actual start/)).toBeInTheDocument();
+  });
+
   it('shows per-bucket median/p85 durations, sample counts and missing-start caveats without changing the chart', async () => {
     const original = apiMock.getMockImplementation()!;
     apiMock.mockImplementation((async (path: string) => {
