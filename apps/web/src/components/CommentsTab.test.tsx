@@ -257,7 +257,7 @@ describe('CommentsTab posting', () => {
     expect(apiMock).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: 'POST' }));
   });
 
-  it('optimistically appends, trims, and refreshes only the comments query on success', async () => {
+  it('optimistically appends, trims, and refreshes only comments and item activity on success', async () => {
     const user = userEvent.setup();
     const { invalidateSpy } = renderTab(priya);
     await rows();
@@ -270,7 +270,10 @@ describe('CommentsTab posting', () => {
     await waitFor(() => expect(screen.queryByText('Sending…')).toBeNull());
     expect(screen.getAllByTestId('comment')).toHaveLength(3);
     expect(screen.getAllByTestId('comment')[2]).toHaveTextContent('just now');
-    for (const [filters] of invalidateSpy.mock.calls) expect(filters).toEqual({ queryKey: ['comments', 'item-1'], exact: true });
+    expect(invalidateSpy.mock.calls.map(([filters]) => filters)).toEqual([
+      { queryKey: ['activity', 'items', 'item-1'] },
+      { queryKey: ['comments', 'item-1'], exact: true },
+    ]);
   });
 
   it('rolls back the optimistic comment and shows an error toast when the API fails', async () => {

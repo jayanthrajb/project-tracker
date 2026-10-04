@@ -48,6 +48,7 @@ beforeEach(() => {
   apiMock.mockImplementation((async (path: string) => {
     if (path.startsWith('/users')) return { users: [] };
     if (path.startsWith('/items/i1/comments')) return { comments: [], total: 4, page: 1, pageSize: 25 };
+    if (path.startsWith('/items/i1/activity')) return { activity: [], total: 0, page: 1, pageSize: 25 };
     throw new Error(`Unexpected ${path}`);
   }) as typeof api);
 });
@@ -80,8 +81,8 @@ describe('ItemFormModal tabs', () => {
   it('restores the active tab from a deep link', async () => {
     renderModal('/projects/p1?item=i1&tab=history');
     expect(screen.getByRole('tab', { name: 'History' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tabpanel')).toHaveTextContent('Coming soon');
-    expect(apiMock).not.toHaveBeenCalled();
+    expect(await screen.findByText('No activity yet')).toBeInTheDocument();
+    expect(apiMock).toHaveBeenCalledWith('/items/i1/activity?page=1&pageSize=25');
   });
 
   it('ignores unknown tab values', () => {

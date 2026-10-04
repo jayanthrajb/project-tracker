@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
@@ -6,10 +6,12 @@ import { toast } from 'react-hot-toast';
 import { ItemFormModal } from '../components/ItemFormModal';
 import { ItemsBoard, ItemsTable } from '../components/ItemsTable';
 import { api } from '../lib/api';
+import { findItem } from '../lib/findItem';
 import type { ApiError } from '../lib/api';
 import type { Item, ItemPriority, ItemStatus, Project, User } from '../types';
 
 const FREEZE_STORAGE_KEY = 'project-tracker.freeze-order-while-editing';
+const ProjectActivity = lazy(() => import('../components/ProjectActivity').then((module) => ({ default: module.ProjectActivity })));
 
 type BulkActionType = 'assignee' | 'status' | 'priority' | 'risk' | 'dueDate' | 'addTag' | 'removeTag';
 
@@ -28,7 +30,6 @@ export function ProjectDetailPage({ user }: { user: User }) {
   const search = searchParams.get('search') ?? '';
   const status = searchParams.get('status') ?? '';
   const itemParam = searchParams.get('item');
-  const restoredItemParam = useRef(false);
 
   const projectQuery = useQuery({ queryKey: ['project', projectId], queryFn: () => api<{ project: Project }>(`/projects/${projectId}`) });
   const projects = useQuery({ queryKey: ['projects'], queryFn: () => api<{ projects: Project[]; users: User[] }>('/projects') });
@@ -36,15 +37,31 @@ export function ProjectDetailPage({ user }: { user: User }) {
     queryKey: ['items', projectId, search, status],
     queryFn: () => api<{ items: Item[]; total: number }>(`/items?projectId=${projectId}&search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}&sort=score-desc&pageSize=100`),
   });
+  const linkedItem = useQuery({
+    queryKey: ['item', itemParam],
+    queryFn: () => findItem(itemParam ?? '', { projectId }),
+    enabled: Boolean(itemParam && itemsQuery.data && !itemsQuery.data.items.some((entry) => entry.id === itemParam)),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const invalidateActivity = (itemIds: string[]) => {
+    void queryClient.invalidateQueries({ queryKey: ['activity', 'projects', projectId] });
+    for (const id of new Set(itemIds)) {
+      void queryClient.invalidateQueries({ queryKey: ['activity', 'items', id] });
+      void queryClient.invalidateQueries({ queryKey: ['item', id], exact: true });
+    }
+  };
 
   const saveItem = useMutation({
     mutationFn: (payload: { id?: string; body: Record<string, unknown> }) => payload.id
       ? api(`/items/${payload.id}`, { method: 'PATCH', body: JSON.stringify(payload.body) })
       : api('/items', { method: 'POST', body: JSON.stringify(payload.body) }),
-    onSuccess: async () => {
+    onSuccess: async (_result, payload) => {
       await queryClient.invalidateQueries({ queryKey: ['items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Item saved');
+      invalidateActivity(payload.id ? [payload.id] : []);
       closeItemModal();
     },
     onError: (error: ApiError) => toast.error(error.message),
@@ -52,9 +69,10 @@ export function ProjectDetailPage({ user }: { user: User }) {
 
   const quickUpdate = useMutation({
     mutationFn: ({ item, patch }: { item: Item; patch: Partial<Item> }) => api(`/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ ...item, ...patch, tags: item.tags }) }),
-    onSettled: async () => {
+    onSettled: async (_result, _error, { item }) => {
       await queryClient.invalidateQueries({ queryKey: ['items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+      invalidateActivity([item.id]);
     },
   });
 
@@ -71,6 +89,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
       await queryClient.invalidateQueries({ queryKey: ['items'] });
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       toast.success('Saved staged changes');
+      invalidateActivity(Object.keys(drafts));
     },
     onError: (error: ApiError) => toast.error(error.message),
   });
@@ -143,24 +162,26 @@ export function ProjectDetailPage({ user }: { user: User }) {
   const users = projects.data?.users ?? [];
   const items = useMemo(() => itemsQuery.data?.items ?? [], [itemsQuery.data]);
 
-  // Restore a deep-linked item (e.g. `?item=<id>&tab=comments`) once on load.
+  // Resolve deep links even when the item is outside the filtered/paginated table.
   useEffect(() => {
-    if (restoredItemParam.current || !itemsQuery.data) return;
-    restoredItemParam.current = true;
-    if (!itemParam) return;
-    const linked = itemsQuery.data.items.find((entry) => entry.id === itemParam);
-    if (linked) {
-      setActiveItem(linked);
+    if (!itemParam || !itemsQuery.data) return;
+    const listed = itemsQuery.data.items.find((entry) => entry.id === itemParam);
+    const error = linkedItem.error as ApiError | null;
+    if (!listed && linkedItem.isError && (error?.status === 404 || error?.status === 403)) {
+      // A failed refetch can retain cached data for a deleted/inaccessible item.
+      setActiveItem((current) => current?.id === itemParam ? undefined : current);
+      setSearchParams((params) => {
+        const next = new URLSearchParams(params);
+        next.delete('item');
+        next.delete('tab');
+        return next;
+      }, { replace: true });
+      queryClient.removeQueries({ queryKey: ['item', itemParam], exact: true });
       return;
     }
-    // The linked item isn't in the current (filtered) list; drop the stale params.
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      next.delete('item');
-      next.delete('tab');
-      return next;
-    }, { replace: true });
-  }, [itemParam, itemsQuery.data, setSearchParams]);
+    const linked = listed ?? linkedItem.data?.item;
+    if (linked) setActiveItem((current) => current?.id === linked.id ? current : linked);
+  }, [itemParam, itemsQuery.data, linkedItem.data, linkedItem.error, linkedItem.isError, queryClient, setSearchParams]);
   const mergedItems = useMemo(
     () => items.map((item) => ({ ...item, ...(drafts[item.id] ?? {}) })),
     [items, drafts],
@@ -274,6 +295,11 @@ export function ProjectDetailPage({ user }: { user: User }) {
         </div>
       </div>
 
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="grid min-w-0 gap-4">
+      {linkedItem.isError && (linkedItem.error as ApiError).status !== 404 && (linkedItem.error as ApiError).status !== 403 && (
+        <div role="alert" className="text-sm text-red-700">Could not open linked item. <button type="button" className="underline" onClick={() => void linkedItem.refetch()}>Retry</button></div>
+      )}
       {view === 'table' ? (
         <>
           <div className="rounded-2xl border border-slate-200 bg-white p-3">
@@ -347,6 +373,11 @@ export function ProjectDetailPage({ user }: { user: User }) {
       ) : (
         <ItemsBoard items={items} onDropStatus={(item, nextStatus) => quickUpdate.mutate({ item, patch: { status: nextStatus } })} onOpen={openItem} />
       )}
+      </div>
+      <Suspense fallback={<div className="text-xs text-slate-500">Loading recent activity…</div>}>
+        <ProjectActivity projectId={projectId} users={users} items={items} />
+      </Suspense>
+      </div>
 
       {draftCount > 0 && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 shadow-lg backdrop-blur">

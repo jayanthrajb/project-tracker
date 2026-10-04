@@ -14,6 +14,7 @@ import { MyItemsPage } from './pages/MyItemsPage';
 import { ImportExportPage } from './pages/ImportExportPage';
 import { AdminUsersPage } from './pages/AdminUsersPage';
 import type { Project, User } from './types';
+import { NotificationBell } from './components/NotificationBell';
 
 function ProtectedLayout() {
   const queryClient = useQueryClient();
@@ -85,6 +86,7 @@ function ProtectedLayout() {
               ))}
             </select>
             <div className="text-sm text-slate-600">{currentUser.name} · {currentUser.role}</div>
+            <NotificationBell key={currentUser.id} userId={currentUser.id} />
             <button className="rounded-lg bg-slate-900 px-3 py-2 text-sm text-white" onClick={() => logout.mutate()}>
               Logout
             </button>

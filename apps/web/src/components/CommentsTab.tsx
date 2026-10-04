@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import type { InfiniteData } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
@@ -9,6 +9,7 @@ import { api } from '../lib/api';
 import { renderMarkdown } from '../lib/markdown';
 import { buildMentionLookup } from '../lib/mentions';
 import { formatRelativeTime, initials } from '../lib/utils';
+import { useUserDirectory } from '../lib/useUserDirectory';
 import type { CommentsPage, ItemComment, MentionableUser, Role } from '../types';
 
 const PAGE_SIZE = 25;
@@ -20,6 +21,7 @@ export const commentsQueryKey = (itemId: string) => ['comments', itemId] as cons
 
 export interface CommentsTabProps {
   itemId: string;
+  projectId?: string;
   currentUser: { id: string; name: string; role: Role };
   users: MentionableUser[];
   preferredUserIds: ReadonlySet<string>;
@@ -171,7 +173,7 @@ function CommentRow({ comment, canEdit, canDelete, lookup, users, preferredUserI
   );
 }
 
-export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCountChange }: CommentsTabProps) {
+export function CommentsTab({ itemId, projectId, currentUser, users, preferredUserIds, onCountChange }: CommentsTabProps) {
   const queryClient = useQueryClient();
   const queryKey = commentsQueryKey(itemId);
   const [body, setBody] = useState('');
@@ -184,11 +186,7 @@ export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCo
     getNextPageParam: (lastPage) => (lastPage.page * lastPage.pageSize < lastPage.total ? lastPage.page + 1 : undefined),
   });
 
-  const directory = useQuery({
-    queryKey: ['users', 'mentionable'],
-    queryFn: () => api<{ users: MentionableUser[] }>('/users?isActive=true&pageSize=100'),
-    staleTime: 5 * 60_000,
-  });
+  const directory = useUserDirectory();
 
   const mentionUsers = useMemo(() => {
     const byId = new Map<string, MentionableUser>();
@@ -235,6 +233,10 @@ export function CommentsTab({ itemId, currentUser, users, preferredUserIds, onCo
         setBody((current) => current || context.text);
       }
       toast.error(errorMessage(error, 'Could not post comment'));
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['activity', 'items', itemId] });
+      if (projectId) void queryClient.invalidateQueries({ queryKey: ['activity', 'projects', projectId] });
     },
     onSettled: () => {
       void invalidate();

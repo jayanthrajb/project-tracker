@@ -1,12 +1,6 @@
 import { cn, formatDate } from '../lib/utils';
+import { priorityColors, riskColors } from '../lib/itemColors';
 import type { Item, ItemPriority, ItemStatus, User } from '../types';
-
-const priorityColors: Record<ItemPriority, string> = {
-  P0: 'bg-red-100 text-red-700',
-  P1: 'bg-orange-100 text-orange-700',
-  P2: 'bg-blue-100 text-blue-700',
-  P3: 'bg-slate-100 text-slate-700',
-};
 
 export function ItemsTable({
   items,
@@ -80,7 +74,7 @@ export function ItemsTable({
                     {['P0', 'P1', 'P2', 'P3'].map((option) => <option key={option}>{option}</option>)}
                   </select>
                 </td>
-                <td className="px-3 py-3"><span className={cn('rounded-full px-2 py-1 text-xs font-semibold', merged.risk === 'HIGH' ? 'bg-red-100 text-red-700' : merged.risk === 'MEDIUM' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700')}>{merged.risk}</span></td>
+                <td className="px-3 py-3"><span className={cn('rounded-full px-2 py-1 text-xs font-semibold', riskColors[merged.risk])}>{merged.risk}</span></td>
                 <td className="px-3 py-3">
                   <select value={merged.status} onChange={(event) => onDraftChange(item, { status: event.target.value as ItemStatus })} className="rounded-lg border border-slate-300 px-2 py-1 text-xs">
                     {['OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE'].map((option) => <option key={option}>{option}</option>)}
