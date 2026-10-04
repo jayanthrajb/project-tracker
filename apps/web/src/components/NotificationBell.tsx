@@ -76,7 +76,7 @@ export function NotificationBell({ userId }: { userId: string }) {
         const linkedItem = notification.item;
         const { item } = await queryClient.fetchQuery({
           queryKey: ['item', linkedItem.id],
-          queryFn: () => findItem(linkedItem.id, { key: linkedItem.key }),
+          queryFn: () => findItem(linkedItem.id),
         });
         return `/projects/${encodeURIComponent(item.projectId)}?item=${encodeURIComponent(notification.item.id)}&tab=${tabs[notification.type]}`;
       } finally {

@@ -165,21 +165,23 @@ export function ProjectDetailPage({ user }: { user: User }) {
   // Resolve deep links even when the item is outside the filtered/paginated table.
   useEffect(() => {
     if (!itemParam || !itemsQuery.data) return;
-    const linked = itemsQuery.data.items.find((entry) => entry.id === itemParam) ?? linkedItem.data?.item;
-    if (linked) {
-      setActiveItem((current) => current?.id === linked.id ? current : linked);
+    const listed = itemsQuery.data.items.find((entry) => entry.id === itemParam);
+    const error = linkedItem.error as ApiError | null;
+    if (!listed && linkedItem.isError && (error?.status === 404 || error?.status === 403)) {
+      // A failed refetch can retain cached data for a deleted/inaccessible item.
+      setActiveItem((current) => current?.id === itemParam ? undefined : current);
+      setSearchParams((params) => {
+        const next = new URLSearchParams(params);
+        next.delete('item');
+        next.delete('tab');
+        return next;
+      }, { replace: true });
+      queryClient.removeQueries({ queryKey: ['item', itemParam], exact: true });
       return;
     }
-    const error = linkedItem.error as ApiError | null;
-    if (!linkedItem.isError || (error?.status !== 404 && error?.status !== 403)) return;
-    // Deleted or inaccessible items cannot be opened.
-    setSearchParams((params) => {
-      const next = new URLSearchParams(params);
-      next.delete('item');
-      next.delete('tab');
-      return next;
-    }, { replace: true });
-  }, [itemParam, itemsQuery.data, linkedItem.data, linkedItem.error, linkedItem.isError, setSearchParams]);
+    const linked = listed ?? linkedItem.data?.item;
+    if (linked) setActiveItem((current) => current?.id === linked.id ? current : linked);
+  }, [itemParam, itemsQuery.data, linkedItem.data, linkedItem.error, linkedItem.isError, queryClient, setSearchParams]);
   const mergedItems = useMemo(
     () => items.map((item) => ({ ...item, ...(drafts[item.id] ?? {}) })),
     [items, drafts],

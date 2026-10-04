@@ -82,7 +82,7 @@ beforeEach(() => {
     }
     if (path.startsWith('/items?')) {
       if (failure === 'item') throw new Error('Unavailable');
-      return { items: [{ id: 'item-1', projectId: 'project-1' }], total: 1, page: 1, pageSize: 100 };
+      return { items: [{ id: 'item-1', projectId: 'project-1', title: 'Fix the bug' }], total: 1, page: 1, pageSize: 100 };
     }
     throw new Error(`Unexpected request ${path}`);
   }) as typeof api);
@@ -130,7 +130,7 @@ describe('NotificationBell', () => {
     await userEvent.click(screen.getByRole('button', { name: /An update/ }));
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent(`/projects/project-1?item=item-1&tab=${tab}`));
     expect(callsFor('/notifications/notification-1/read')).toEqual([['/notifications/notification-1/read', { method: 'POST', body: '{}' }]]);
-    expect(callsFor('/items?')).toEqual([['/items?search=DEMO-1&page=1&pageSize=100']]);
+    expect(callsFor('/items?')).toEqual([['/items?page=1&pageSize=100']]);
     expect(apiMock.mock.calls.findIndex(([path]) => path.endsWith('/read'))).toBeLessThan(apiMock.mock.calls.findIndex(([path]) => path.startsWith('/items?')));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Notifications' })).toHaveFocus();
@@ -153,7 +153,7 @@ describe('NotificationBell', () => {
     expect(screen.getByLabelText('Location')).toHaveTextContent('/');
   });
 
-  it('finds an exact item ID across paginated key-search results and caches the resolved item', async () => {
+  it('finds an exact item ID across paginated results without a key search and caches the resolved item', async () => {
     const original = apiMock.getMockImplementation();
     apiMock.mockImplementation((async (path: string, init?: RequestInit) => {
       if (path.startsWith('/items?')) {
@@ -170,8 +170,8 @@ describe('NotificationBell', () => {
     await userEvent.click(screen.getByRole('button', { name: /An update/ }));
     await waitFor(() => expect(screen.getByLabelText('Location')).toHaveTextContent('/projects/project-1?item=item-1&tab=comments'));
     expect(callsFor('/items?')).toEqual([
-      ['/items?search=DEMO-1&page=1&pageSize=100'],
-      ['/items?search=DEMO-1&page=2&pageSize=100'],
+      ['/items?page=1&pageSize=100'],
+      ['/items?page=2&pageSize=100'],
     ]);
     expect(queryClient.getQueryData(['item', 'item-1'])).toEqual({ item: { id: 'item-1', projectId: 'project-1' } });
   });

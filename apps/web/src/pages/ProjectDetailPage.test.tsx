@@ -34,12 +34,13 @@ function Probe() {
   </>;
 }
 
-function mount(url = '/projects/p1') {
-  render(<QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+function mount(url = '/projects/p1', client = new QueryClient({ defaultOptions: { queries: { retry: false } } })) {
+  render(<QueryClientProvider client={client}>
     <MemoryRouter initialEntries={[url]}><Routes>
       <Route path="/projects/:projectId" element={<><ProjectDetailPage user={user} /><Probe /></>} />
     </Routes></MemoryRouter>
   </QueryClientProvider>);
+  return client;
 }
 
 beforeEach(() => {
@@ -106,5 +107,21 @@ describe('Project activity integration', () => {
     await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('?search=Listed'));
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(screen.getByTestId('location')).not.toHaveTextContent('item=');
+  });
+
+  it.each([403, 404])('closes and evicts a cached linked item after a confirmed %s refetch error', async (status) => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    client.setQueryData(['item', 'i2'], { item: hiddenItem });
+    mount('/projects/p1?search=Listed&item=i2&tab=history', client);
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    const original = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string) => {
+      if (path === '/items?projectId=p1&page=1&pageSize=100') throw new ApiError('Unavailable', status);
+      return original(path);
+    }) as typeof api);
+    await client.invalidateQueries({ queryKey: ['item', 'i2'], exact: true });
+    await waitFor(() => expect(screen.getByTestId('location').textContent).toBe('?search=Listed'));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(client.getQueryData(['item', 'i2'])).toBeUndefined();
   });
 });

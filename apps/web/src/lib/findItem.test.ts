@@ -12,10 +12,11 @@ beforeEach(() => {
 });
 
 describe('findItem through the existing list endpoint', () => {
-  it('uses the notification key as search and checks the exact ID', async () => {
-    apiMock.mockResolvedValue({ items: [{ id: 'other' }, { id: 'target', projectId: 'p1' }], total: 2 });
-    expect(await findItem('target', { key: 'APO-1' })).toEqual({ item: { id: 'target', projectId: 'p1' } });
-    expect(apiMock).toHaveBeenCalledWith('/items?search=APO-1&page=1&pageSize=100');
+  it('matches the exact notification item ID without searching unsupported keys', async () => {
+    const target = { id: 'target', projectId: 'p1', key: 'APO-1', title: 'Ship it', description: '' };
+    apiMock.mockResolvedValue({ items: [{ id: 'other' }, target], total: 2 });
+    expect(await findItem('target')).toEqual({ item: target });
+    expect(apiMock).toHaveBeenCalledWith('/items?page=1&pageSize=100');
   });
 
   it('finds deep-linked project items beyond the first hundred', async () => {
