@@ -6,6 +6,7 @@ import { ItemFilters } from '../components/ItemFilters';
 import { SavedViews } from '../components/SavedViews';
 import { api, ApiError } from '../lib/api';
 import { backlogColor } from '../lib/itemColors';
+import { canEditItem } from '../lib/itemPermissions';
 import { filterOptions } from '../lib/itemViewFilters';
 import { useSavedViews } from '../lib/useSavedViews';
 import { cn, formatDate } from '../lib/utils';
@@ -85,12 +86,7 @@ export function MyItemsPage({ user }: { user: User }) {
       <div className="grid gap-3">
         {visibleItems.map((item) => {
           const update = recent[item.id]?.query === savedViews.query ? recent[item.id] : undefined;
-          const canUpdate = user.role !== 'DEVELOPER' || (
-            (item.assigneeId === user.id || item.reporterId === user.id)
-            && item.reporterId === user.id
-            && (!item.assigneeId || item.assigneeId === user.id)
-            && projects.data?.projects.some((project) => project.id === item.projectId && project.members.some((member) => member.user.id === user.id))
-          );
+          const canUpdate = canEditItem(user, item);
           return (
           <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-4">
             <div className="flex items-start justify-between gap-3">

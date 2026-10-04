@@ -122,19 +122,41 @@ describe('My Items inline status', () => {
     await waitFor(() => expect(screen.queryByRole('combobox', { name: 'Status for APO-1' })).not.toBeInTheDocument(), { timeout: 6000 });
   }, 10000);
 
-  it.each(['reporter', 'membership', 'assignee'])('disables developer updates when the API %s requirement is unmet', async (requirement) => {
-    if (requirement === 'reporter') listedItems = [{ ...item, reporterId: 'u2' }];
-    if (requirement === 'membership') projects = [{ ...project, members: [] }];
-    if (requirement === 'assignee') listedItems = [{ ...item, assigneeId: 'u2' }];
+  it.each([
+    ['assignee', user.id, 'u2'],
+    ['reporter', 'u2', user.id],
+  ])('allows a developer who is only the %s to update status', async (_relationship, assigneeId, reporterId) => {
+    listedItems = [{ ...item, assigneeId, reporterId }];
     mount();
     const select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/projects'));
+    expect(select).toBeEnabled();
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/items/i1', { method: 'PATCH', body: '{"status":"IN_PROGRESS"}' }));
+    listedItems = [{ ...listedItems[0], status: 'IN_PROGRESS' }];
+    resolveUpdate({ item: listedItems[0] });
+    await waitFor(() => expect(select).toBeEnabled());
+  });
+
+  it('disables updates with an explanation for a developer who is neither assignee nor reporter', async () => {
+    listedItems = [{ ...item, assigneeId: 'u2', reporterId: 'u2' }];
+    mount();
+    const select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
     expect(select).toBeDisabled();
+    expect(select).toHaveAttribute('title', 'You do not have permission to update this item.');
     expect(apiMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
   });
 
-  it.each(['ADMIN', 'MANAGER'] as const)('allows %s updates without developer-only restrictions', async (role) => {
+  it.each([true, false])('does not require project membership (member: %s)', async (member) => {
+    projects = [{ ...project, members: member ? [{ user }] : [] }];
     listedItems = [{ ...item, reporterId: 'u2' }];
+    mount();
+    const select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
+    await waitFor(() => expect(screen.getByLabelText('Project')).toHaveTextContent('Apollo'));
+    expect(select).toBeEnabled();
+  });
+
+  it.each(['ADMIN', 'MANAGER'] as const)('allows %s updates without developer-only restrictions', async (role) => {
+    listedItems = [{ ...item, assigneeId: 'u2', reporterId: 'u2' }];
     projects = [{ ...project, members: [] }];
     mount('/my-items', { ...user, role });
     expect(await screen.findByRole('combobox', { name: 'Status for APO-1' })).toBeEnabled();

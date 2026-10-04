@@ -1,4 +1,4 @@
-import { Suspense, lazy, useMemo, useRef, useState } from 'react';
+import { Suspense, lazy, useId, useMemo, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { useSearchParams } from 'react-router-dom';
 import { z } from 'zod';
@@ -69,6 +69,7 @@ interface Props {
 export function ItemFormModal({ item, projects, users, defaultProjectId, currentUser, onClose, onSubmit }: Props) {
   const currentUserId = currentUser.id;
   const dialogRef = useRef<HTMLDivElement>(null);
+  const projectHintId = useId();
   const [searchParams, setSearchParams] = useSearchParams();
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [attachmentCount, setAttachmentCount] = useState<number | null>(null);
@@ -131,12 +132,15 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
         tags: parsed.tags.split(',').map((tag: string) => tag.trim()).filter(Boolean),
       });
     })}>
-      <label className="grid gap-1 text-sm">
-        <span>Project</span>
-        <select className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('projectId')}>
+      <div className="grid gap-1 border-b border-slate-200 pb-3 text-sm md:col-span-2">
+        <label className="grid gap-1">
+        <span>Parent project</span>
+        <select disabled={Boolean(item)} aria-describedby={item ? projectHintId : undefined} className="rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-50 disabled:text-slate-500" {...form.register('projectId')}>
           {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
         </select>
-      </label>
+        </label>
+        {item && <p id={projectHintId} className="text-xs text-slate-500">Existing items cannot be moved between projects.</p>}
+      </div>
       <label className="grid gap-1 text-sm">
         <span>Title</span>
         <input className="rounded-lg border border-slate-300 px-3 py-2" {...form.register('title')} />
