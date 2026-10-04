@@ -134,10 +134,10 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
     })}>
       <div className="grid gap-1 border-b border-slate-200 pb-3 text-sm md:col-span-2">
         <label className="grid gap-1">
-        <span>Parent project</span>
-        <select disabled={Boolean(item)} aria-describedby={item ? projectHintId : undefined} className="rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-50 disabled:text-slate-500" {...form.register('projectId')}>
-          {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
-        </select>
+          <span>Parent project</span>
+          <select disabled={Boolean(item)} aria-describedby={item ? projectHintId : undefined} className="rounded-lg border border-slate-300 px-3 py-2 disabled:bg-slate-50 disabled:text-slate-500" {...form.register('projectId')}>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.code} · {project.name}</option>)}
+          </select>
         </label>
         {item && <p id={projectHintId} className="text-xs text-slate-500">Existing items cannot be moved between projects.</p>}
       </div>

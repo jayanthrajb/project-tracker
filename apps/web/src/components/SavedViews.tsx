@@ -52,7 +52,10 @@ export function SavedViews({ state, user, projectId, canShare }: { state: SavedV
         </>}
         {selected?.userId === user.id && !selected.isDefault && <button type="button" className={buttonClass} disabled={mutation.isPending} onClick={() => void execute(`/views/${encodeURIComponent(selected.id)}/set-default`, 'POST', {})}>Set default</button>}
       </div>
-      <p className="text-xs text-slate-500">Tag filtering is not supported by saved views or the item filter API.</p>
+      <details className="text-xs text-slate-500">
+        <summary className="cursor-pointer">Filter limitations</summary>
+        <p>Tag filtering is not supported by saved views or the item filter API.</p>
+      </details>
       {selected && selected.sortJson.field && `${selected.sortJson.field}-${selected.sortJson.direction}` !== viewSort(selected) && <p role="status">This saved sort is not supported by the item API. Showing score-desc instead.</p>}
       {state.viewsQuery.isError && <p role="alert">Could not load saved views. <button type="button" className={buttonClass} onClick={() => void state.viewsQuery.refetch()}>Retry saved views</button></p>}
       {mutation.isError && <p role="alert">{mutation.error.message}</p>}
