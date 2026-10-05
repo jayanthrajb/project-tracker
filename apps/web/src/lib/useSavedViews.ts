@@ -13,11 +13,11 @@ export function useSavedViews(user: User, projectId?: string, ownItems = false, 
   const viewsQuery = useQuery({ queryKey: ['saved-views', user.id], queryFn: () => api<{ views: SavedView[] }>('/views') });
   const views = (viewsQuery.data?.views ?? []).filter((view) => ownItems || !view.projectId || view.projectId === projectId);
   const selected = views.find((view) => view.id === params.get('view'));
-  const constrain = (filters: ItemViewFilters) => constrainFilters(filters, projectId, ownItems ? user.id : undefined);
+  const constrain = (filters: ItemViewFilters) => constrainFilters(filters, projectId);
   const useProjectDefault = Boolean(defaultActiveStatuses && projectId && !ownItems && !params.has('view') && !filterKeys.some((key) => params.has(key)));
   const filters = constrain(useProjectDefault ? { statuses: filterOptions.status.filter((status) => status !== 'DONE') } : readItemFilters(params));
   const sort = readItemSort(params);
-  const query = itemQuery(filters, sort);
+  const query = itemQuery(filters, sort, ownItems);
   const initialized = useRef('');
   const context = `${user.id}:${projectId ?? 'my-items'}`;
 
@@ -32,7 +32,7 @@ export function useSavedViews(user: User, projectId?: string, ownItems = false, 
     if (!initial && !useProjectDefault) return;
     setParams((current) => {
       if (filterKeys.some((key) => current.has(key))) return current;
-      const next = writeItemFilters(current, constrainFilters(initial?.filtersJson ?? { statuses: filterOptions.status.filter((status) => status !== 'DONE') }, projectId, ownItems ? user.id : undefined), initial ? viewSort(initial) : 'score-desc');
+      const next = writeItemFilters(current, constrainFilters(initial?.filtersJson ?? { statuses: filterOptions.status.filter((status) => status !== 'DONE') }, projectId), initial ? viewSort(initial) : 'score-desc');
       if (initial) next.set('view', initial.id);
       return next;
     }, { replace: true });
@@ -68,7 +68,7 @@ export function useSavedViews(user: User, projectId?: string, ownItems = false, 
     const [field, direction] = sort.split('-');
     return { filtersJson: filters, sortJson: { field, direction } };
   };
-  const modified = Boolean(selected && query !== itemQuery(constrain(selected.filtersJson), viewSort(selected)));
+  const modified = Boolean(selected && query !== itemQuery(constrain(selected.filtersJson), viewSort(selected), ownItems));
   return { viewsQuery, views, selected, filters, sort, query, modified, choose, change, detach, capture, mutation };
 }
 

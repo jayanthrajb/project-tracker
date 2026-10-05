@@ -38,6 +38,7 @@ const itemSchema = z.object({
 const querySchema = z.object({
   projectId: z.string().optional(),
   assigneeId: z.string().optional(),
+  mine: z.enum(['true', 'false']).optional().transform((value) => value === 'true'),
   unassigned: z.enum(['true', 'false']).optional().transform((value) => value === 'true'),
   status: z.union([z.string(), z.array(z.string())]).optional(),
   type: z.union([z.string(), z.array(z.string())]).optional(),
@@ -160,7 +161,12 @@ async function listItems(rawQuery: unknown, user?: { id: string; role: UserRole 
     dueBefore: query.dueBefore,
   });
 
-  const where = applyReadScope(buildItemWhere(filters), user);
+  const baseWhere = buildItemWhere(filters);
+  if (query.mine) {
+    if (!user) throw new AppError(401, 'Authentication required');
+    baseWhere.AND = [{ OR: [{ assigneeId: user.id }, { reporterId: user.id }] }];
+  }
+  const where = applyReadScope(baseWhere, user);
   const rows = await prisma.item.findMany({ where, include: itemInclude });
   const enriched = rows.map((item) => ({ ...item, score: calculateItemScore(item) }));
   const sorted = sortItems(enriched, query.sort);
@@ -291,7 +297,11 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
 
 itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
   const itemId = z.string().parse(req.params.id);
-  const input = itemSchema.partial().parse(req.body);
+  const parsed = itemSchema.partial().parse(req.body);
+  const fields = Object.keys(req.body);
+  const statusOnly = fields.length === 1 && fields[0] === 'status';
+  // Partial schemas still apply defaults; status-only updates must not reset other fields.
+  const input: typeof parsed = statusOnly ? { status: parsed.status } : parsed;
   const existing = await prisma.item.findUnique({ where: { id: itemId } });
   if (!existing) throw new AppError(404, 'Item not found');
   if (!req.user || !canEditItem(req.user.id, req.user.role, existing)) {
@@ -302,8 +312,8 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
   }
 
   const nextProjectId = input.projectId ?? existing.projectId;
-  const nextReporterId = input.reporterId ?? existing.reporterId;
-  const nextAssigneeId = input.assigneeId === undefined ? existing.assigneeId : input.assigneeId;
+  const nextReporterId = statusOnly ? req.user.id : input.reporterId ?? existing.reporterId;
+  const nextAssigneeId = statusOnly ? undefined : input.assigneeId === undefined ? existing.assigneeId : input.assigneeId;
   await assertCanCreateItem(req.user, nextProjectId, nextReporterId, nextAssigneeId);
 
   const item = await prisma.$transaction(async (tx) => {
