@@ -49,6 +49,11 @@ enum ItemRisk {
   HIGH
 }
 
+enum DependencyType {
+  BLOCKS
+  RELATES_TO
+}
+
 enum ActivityAction {
   CREATED
   UPDATED
@@ -122,37 +127,56 @@ model ProjectMember {
 }
 
 model Item {
-  id            String         @id @default(cuid())
-  projectId     String
-  key           String         @unique
-  type          ItemType
-  title         String
-  description   String
-  status        ItemStatus     @default(OPEN)
-  priority      ItemPriority   @default(P2)
-  risk          ItemRisk       @default(MEDIUM)
-  assigneeId    String?
-  reporterId    String
-  dueDate       DateTime?
-  estimateHours Int?
-  spentHours    Int            @default(0)
-  tags          String[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  closedAt      DateTime?
-  startedAt     DateTime?
-  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  assignee      User?          @relation("ItemAssignee", fields: [assigneeId], references: [id])
-  reporter      User           @relation("ItemReporter", fields: [reporterId], references: [id])
-  activityLogs  ActivityLog[]
-  comments      Comment[]
-  notifications Notification[]
-  attachments   Attachment[]
+  id               String           @id @default(cuid())
+  projectId        String
+  key              String           @unique
+  type             ItemType
+  title            String
+  description      String
+  status           ItemStatus       @default(OPEN)
+  priority         ItemPriority     @default(P2)
+  risk             ItemRisk         @default(MEDIUM)
+  assigneeId       String?
+  reporterId       String
+  dueDate          DateTime?
+  estimateHours    Int?
+  spentHours       Int              @default(0)
+  tags             String[]
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  closedAt         DateTime?
+  startedAt        DateTime?
+  parentId         String?
+  project          Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assignee         User?            @relation("ItemAssignee", fields: [assigneeId], references: [id])
+  reporter         User             @relation("ItemReporter", fields: [reporterId], references: [id])
+  parent           Item?            @relation("ItemHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Item[]           @relation("ItemHierarchy")
+  dependenciesFrom ItemDependency[] @relation("DependencyFrom")
+  dependenciesTo   ItemDependency[] @relation("DependencyTo")
+  activityLogs     ActivityLog[]
+  comments         Comment[]
+  notifications    Notification[]
+  attachments      Attachment[]
 
   @@index([projectId])
+  @@index([parentId])
   @@index([assigneeId])
   @@index([status])
   @@index([dueDate])
+}
+
+model ItemDependency {
+  id        String         @id @default(cuid())
+  fromId    String
+  toId      String
+  type      DependencyType @default(BLOCKS)
+  createdAt DateTime       @default(now())
+  from      Item           @relation("DependencyFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  to        Item           @relation("DependencyTo", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId, type])
+  @@index([toId])
 }
 
 model ActivityLog {

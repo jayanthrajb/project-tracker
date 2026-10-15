@@ -118,7 +118,7 @@ reportsRouter.get('/:id/reports/status-breakdown', asyncHandler(async (req, res)
   const range = resolveRange(query);
   const grouped = await prisma.item.groupBy({
     by: ['status'],
-    where: { projectId, createdAt: { gte: range.from, lt: range.toExclusive } },
+    where: { projectId, children: { none: {} }, createdAt: { gte: range.from, lt: range.toExclusive } },
     _count: { _all: true },
   });
   const counts = new Map(grouped.map((row) => [row.status, row._count._all]));
@@ -136,6 +136,7 @@ reportsRouter.get('/:id/reports/workload', asyncHandler(async (req, res) => {
   const range = resolveRange(query);
   const where = {
     projectId,
+    children: { none: {} },
     status: openStatusWhere,
     createdAt: { gte: range.from, lt: range.toExclusive },
   };
@@ -189,6 +190,7 @@ reportsRouter.get('/:id/reports/overdue', asyncHandler(async (req, res) => {
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
     WHERE i."projectId" = ${projectId}
+      AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
       AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."dueDate" < (${range.to}::timestamptz AT TIME ZONE 'UTC')
@@ -203,6 +205,7 @@ reportsRouter.get('/:id/reports/overdue', asyncHandler(async (req, res) => {
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
+      AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
       AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."dueDate" < (${range.to}::timestamptz AT TIME ZONE 'UTC')
@@ -230,6 +233,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
     WHERE i."projectId" = ${projectId} AND i."status" IN (${committedStatusSql})
+      AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
     GROUP BY bucket
     UNION ALL
@@ -240,6 +244,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
     END AS bucket, COUNT(*)::bigint AS value
     FROM "Item" i
     WHERE i."projectId" = ${projectId} AND i."status" IN (${committedStatusSql})
+      AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
     GROUP BY bucket
   `);
@@ -252,6 +257,7 @@ reportsRouter.get('/:id/reports/aging', asyncHandler(async (req, res) => {
     FROM "Item" i
     LEFT JOIN "User" u ON u."id" = i."assigneeId"
     WHERE i."projectId" = ${projectId}
+      AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
       AND i."status" IN (${committedStatusSql})
       AND i."createdAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       AND i."updatedAt" < (${new Date(range.toExclusive.getTime() - 7 * 86_400_000)}::timestamptz AT TIME ZONE 'UTC')
@@ -300,6 +306,10 @@ reportsRouter.get('/:id/reports/throughput', asyncHandler(async (req, res) => {
         AND a."field" = 'status'
         AND a."newValue" = ${ItemStatus.DONE}
         AND a."action" IN ('STATUS_CHANGED'::"ActivityAction", 'BULK_UPDATED'::"ActivityAction")
+        AND EXISTS (
+          SELECT 1 FROM "Item" i WHERE i."id" = a."itemId"
+            AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
+        )
       GROUP BY bucket
     ), durations AS (
       SELECT date_trunc(${query.interval}, i."closedAt") AS bucket,
@@ -320,6 +330,7 @@ reportsRouter.get('/:id/reports/throughput', asyncHandler(async (req, res) => {
         COUNT(*)::bigint AS "leadSampleCount"
       FROM "Item" i
       WHERE i."projectId" = ${projectId}
+        AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
         AND i."closedAt" >= (${range.from}::timestamptz AT TIME ZONE 'UTC')
         AND i."closedAt" < (${range.toExclusive}::timestamptz AT TIME ZONE 'UTC')
       GROUP BY bucket
@@ -386,6 +397,7 @@ reportsRouter.get('/:id/reports/burndown', asyncHandler(async (req, res) => {
         ), i."status"::text) AS status
       FROM snapshots s
       JOIN "Item" i ON i."projectId" = ${projectId} AND i."createdAt" < s.cutoff
+        AND NOT EXISTS (SELECT 1 FROM "Item" child WHERE child."parentId" = i."id")
     )
     SELECT s.day::text AS bucket,
       COUNT(h."id") FILTER (WHERE h.status IN (${Prisma.join(committedStatuses)}))::bigint AS value

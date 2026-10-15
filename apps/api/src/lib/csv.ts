@@ -21,9 +21,21 @@ const rowSchema = z.object({
   estimateHours: z.coerce.number().optional(),
   spentHours: z.coerce.number().optional().default(0),
   tags: z.string().optional().default(''),
+  key: z.string().optional().default(''),
+  parentKey: z.string().optional().default(''),
+  blocksKeys: z.string().optional().default(''),
+  relatesToKeys: z.string().optional().default(''),
+  blockedByKeys: z.string().optional().default(''),
 });
 
 export type ParsedImportRow = z.infer<typeof rowSchema>;
+export type NormalizedImportRow = ParsedImportRow & {
+  relationshipColumns: {
+    parentKey: boolean;
+    blocksKeys: boolean;
+    relatesToKeys: boolean;
+  };
+};
 
 export function parseCsvRows(input: string) {
   return Papa.parse<Record<string, string>>(input, {
@@ -33,11 +45,19 @@ export function parseCsvRows(input: string) {
 }
 
 export function normalizeImportRows(rows: Record<string, string>[], mapping?: Record<string, string>) {
-  const results: { index: number; data?: ParsedImportRow; errors: string[] }[] = [];
+  const results: { index: number; data?: NormalizedImportRow; errors: string[] }[] = [];
 
   rows.forEach((row, index) => {
     const mapped = Object.entries(row).reduce<Record<string, string>>((acc, [key, value]) => {
-      const target = mapping?.[key] ?? key;
+      const canonical = ({
+        Key: 'key',
+        ParentKey: 'parentKey',
+        BlocksKeys: 'blocksKeys',
+        BlockedByKeys: 'blockedByKeys',
+        RelatesToKeys: 'relatesToKeys',
+      } as Record<string, string>)[key] ?? key;
+      if (canonical === 'blockedByKeys') return acc;
+      const target = mapping?.[key] ?? canonical;
       acc[target] = value;
       return acc;
     }, {});
@@ -51,7 +71,18 @@ export function normalizeImportRows(rows: Record<string, string>[], mapping?: Re
       return;
     }
 
-    results.push({ index, data: parsed.data, errors: [] });
+    results.push({
+      index,
+      data: {
+        ...parsed.data,
+        relationshipColumns: {
+          parentKey: Object.hasOwn(mapped, 'parentKey'),
+          blocksKeys: Object.hasOwn(mapped, 'blocksKeys'),
+          relatesToKeys: Object.hasOwn(mapped, 'relatesToKeys'),
+        },
+      },
+      errors: [],
+    });
   });
 
   return results;

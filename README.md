@@ -182,6 +182,8 @@ Done items always score `0`.
 - Preview the parsed rows.
 - Adjust column mapping if needed.
 - Commit the import and review any per-row validation errors.
+- Item exports include `ParentKey`, `BlocksKeys`, `BlockedByKeys`, and `RelatesToKeys`. Multi-item links use semicolon-separated item keys; `BlockedByKeys` is export-only and ignored on import.
+- A relationship column that is present but blank clears that relationship; if the column is absent, existing relationships are left unchanged.
 
 ## Deployment
 
