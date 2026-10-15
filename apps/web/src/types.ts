@@ -61,6 +61,7 @@ export interface Item {
 
 export interface ItemLink {
   id: string;
+  projectId?: string;
   key: string;
   title: string;
   status: ItemStatus;

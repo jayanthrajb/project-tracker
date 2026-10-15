@@ -57,6 +57,36 @@ beforeEach(() => {
 });
 
 describe('ItemFormModal tabs', () => {
+  it('dismisses Links suggestions before closing the modal and retains its focus trap', async () => {
+    const original = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string, init?: RequestInit) => {
+      if (path.startsWith('/items?')) return { items: [item, { ...item, id: 'candidate', key: 'APO-2', title: 'Candidate' }], total: 2, pageSize: 20 };
+      return original(path, init);
+    }) as typeof api);
+    const user = userEvent.setup();
+    const { onClose, onSubmit } = renderModal();
+    await user.click(screen.getByRole('tab', { name: 'Links' }));
+    const picker = await screen.findByRole('combobox', { name: 'Parent item' });
+    await user.type(picker, 'Candidate');
+    await screen.findByRole('option', { name: /APO-2/ });
+    await user.keyboard('{Escape}');
+    expect(picker).toHaveAttribute('aria-expanded', 'false');
+    expect(picker).toHaveValue('Candidate');
+    expect(picker).toHaveFocus();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onSubmit).not.toHaveBeenCalled();
+    const lastInput = screen.getByRole('combobox', { name: 'Relates to item' });
+    lastInput.focus();
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    await user.click(picker);
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(picker).toHaveValue('APO-2 · Candidate');
+    expect(onSubmit).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it('locks the parent project when editing and retains it in the submitted item', async () => {
     const { onSubmit } = renderModal();
     const select = screen.getByRole('combobox', { name: 'Parent project' });
