@@ -103,10 +103,10 @@ describe('ItemFormModal tabs', () => {
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('closedAt');
   });
 
-  it('shows four tabs with Details selected and does not fetch comments up front', () => {
+  it('shows five tabs with Details selected and does not fetch comments up front', () => {
     renderModal();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Details', 'Comments', 'History', 'Attachments']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Details', 'Comments', 'History', 'Attachments', 'Links']);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     expect(tabs[0]).toHaveAttribute('tabindex', '0');
     expect(tabs[1]).toHaveAttribute('tabindex', '-1');
@@ -144,13 +144,12 @@ describe('ItemFormModal tabs', () => {
     renderModal();
     screen.getByRole('tab', { name: 'Details' }).focus();
     await user.keyboard('{ArrowLeft}');
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByText('No attachments yet')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveFocus();
     await user.keyboard('{Home}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
   });

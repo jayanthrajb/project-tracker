@@ -16,8 +16,9 @@ import { backlogColor } from '../lib/itemColors';
 const CommentsTab = lazy(() => import('./CommentsTab').then((module) => ({ default: module.CommentsTab })));
 const HistoryTab = lazy(() => import('./HistoryTab').then((module) => ({ default: module.HistoryTab })));
 const AttachmentsTab = lazy(() => import('./AttachmentsTab').then((module) => ({ default: module.AttachmentsTab })));
+const LinksTab = lazy(() => import('./LinksTab').then((module) => ({ default: module.LinksTab })));
 
-export const ITEM_TABS = ['details', 'comments', 'history', 'attachments'] as const;
+export const ITEM_TABS = ['details', 'comments', 'history', 'attachments', 'links'] as const;
 export type ItemTab = (typeof ITEM_TABS)[number];
 
 function isItemTab(value: string | null): value is ItemTab {
@@ -267,6 +268,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
                 label: <>Attachments{attachmentCount !== null && <span className="rounded-full bg-slate-200 px-1.5 text-[11px] font-medium text-slate-700">{attachmentCount}</span>}</>,
                 content: <Suspense fallback={<div className="py-6 text-sm text-slate-500">Loading attachments…</div>}><AttachmentsTab key={item.id} item={item} currentUser={currentUser} onCountChange={setAttachmentCount} /></Suspense>,
               },
+              { id: 'links', label: 'Links', content: <Suspense fallback={<div className="py-6 text-sm text-slate-500">Loading links…</div>}><LinksTab key={item.id} item={item} /></Suspense> },
             ]}
           />
         ) : (

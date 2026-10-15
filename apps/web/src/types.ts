@@ -52,6 +52,19 @@ export interface Item {
   project: { id: string; name: string; code: string };
   assignee: User | null;
   reporter: User;
+  parent?: ItemLink | null;
+  children?: ItemLink[];
+  blocks?: ItemLink[];
+  blockedBy?: ItemLink[];
+  relatesTo?: ItemLink[];
+}
+
+export interface ItemLink {
+  id: string;
+  key: string;
+  title: string;
+  status: ItemStatus;
+  projectCode: string;
 }
 
 export interface DashboardResponse {
