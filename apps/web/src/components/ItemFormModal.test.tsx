@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,6 +88,21 @@ describe('ItemFormModal tabs', () => {
     expect(document.querySelector('[name="startedAt"], [name="closedAt"]')).toBeNull();
   });
 
+  it('warns about open blockers before changing status and proceeds only after confirmation', async () => {
+    const user = userEvent.setup();
+    const blockedItem = { ...item, blockedBy: [{ id: 'b1', key: 'BET-1', title: 'Blocking task', status: 'OPEN' as const, projectCode: 'BET' }] };
+    const { onSubmit } = renderModal('/projects/p1', { item: blockedItem });
+    const status = screen.getByLabelText('status');
+    await user.selectOptions(status, 'IN_PROGRESS');
+    const warning = screen.getByRole('alertdialog', { name: 'Proceed with blocked item?' });
+    expect(warning).toHaveTextContent('BET-1 · Blocking task');
+    expect(status).toHaveValue('OPEN');
+    await user.click(within(warning).getByRole('button', { name: 'Proceed' }));
+    expect(status).toHaveValue('IN_PROGRESS');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ status: 'IN_PROGRESS' })));
+  });
+
   it('renders relative actual dates with exact timestamps and never submits them', async () => {
     const startedAt = '2026-10-01T12:34:56.000Z';
     const closedAt = '2026-10-03T16:00:00.000Z';
@@ -103,10 +118,10 @@ describe('ItemFormModal tabs', () => {
     expect(onSubmit.mock.calls[0][0]).not.toHaveProperty('closedAt');
   });
 
-  it('shows four tabs with Details selected and does not fetch comments up front', () => {
+  it('shows five tabs with Details selected and does not fetch comments up front', () => {
     renderModal();
     const tabs = screen.getAllByRole('tab');
-    expect(tabs.map((tab) => tab.textContent)).toEqual(['Details', 'Comments', 'History', 'Attachments']);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(['Details', 'Comments', 'History', 'Attachments', 'Links']);
     expect(tabs[0]).toHaveAttribute('aria-selected', 'true');
     expect(tabs[0]).toHaveAttribute('tabindex', '0');
     expect(tabs[1]).toHaveAttribute('tabindex', '-1');
@@ -144,13 +159,12 @@ describe('ItemFormModal tabs', () => {
     renderModal();
     screen.getByRole('tab', { name: 'Details' }).focus();
     await user.keyboard('{ArrowLeft}');
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveAttribute('aria-selected', 'true');
-    expect(await screen.findByText('No attachments yet')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveAttribute('aria-selected', 'true');
     await user.keyboard('{ArrowRight}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveFocus();
     await user.keyboard('{End}');
-    expect(screen.getByRole('tab', { name: /Attachments/ })).toHaveFocus();
+    expect(screen.getByRole('tab', { name: 'Links' })).toHaveFocus();
     await user.keyboard('{Home}');
     expect(screen.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true');
   });

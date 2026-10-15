@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -91,6 +91,23 @@ describe('My Items inline status', () => {
       { queryKey: ['my-items', user.id, expect.any(String)], exact: true },
     ]));
     expect(invalidate).toHaveBeenCalledTimes(3);
+  });
+
+  it('warns about open blockers before starting work, but allows deliberate confirmation', async () => {
+    listedItems = [{
+      ...item,
+      blockedBy: [{ id: 'b1', key: 'BET-1', title: 'Blocking task', status: 'OPEN', projectCode: 'BET' }],
+    }];
+    mount();
+    const select = await screen.findByRole('combobox', { name: 'Status for APO-1' });
+    fireEvent.change(select, { target: { value: 'IN_PROGRESS' } });
+    const warning = screen.getByRole('alertdialog', { name: 'Proceed with blocked item?' });
+    expect(warning).toHaveTextContent('BET-1 · Blocking task');
+    expect(apiMock.mock.calls.some(([, init]) => init?.method === 'PATCH')).toBe(false);
+    fireEvent.click(within(warning).getByRole('button', { name: 'Proceed' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/items/i1', { method: 'PATCH', body: '{"status":"IN_PROGRESS"}' }));
+    listedItems = [{ ...listedItems[0], status: 'IN_PROGRESS' }];
+    resolveUpdate({ item: listedItems[0] });
   });
 
   it.each([
