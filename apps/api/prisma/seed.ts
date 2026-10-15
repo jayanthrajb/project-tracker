@@ -12,6 +12,7 @@ import {
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
+import { assertSeedAllowed } from './seed-guard.js';
 import { hashPassword } from '../src/lib/auth.js';
 import '../src/lib/env.js';
 
@@ -27,6 +28,8 @@ function daysFromNow(days?: number | null) {
 }
 
 async function main() {
+  await assertSeedAllowed(prisma);
+
   await prisma.projectMember.deleteMany();
   await prisma.item.deleteMany();
   await prisma.project.deleteMany();

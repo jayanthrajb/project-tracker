@@ -44,10 +44,14 @@ _Add screenshots here after the first local run._
    ```bash
    npm run db:migrate
    ```
-6. Seed demo data:
+6. Seed demo data (destructive; only for a disposable development database):
    ```bash
-   npm run db:seed
+   SEED_FORCE=true npm run db:seed
    ```
+   Seeding is always refused when `NODE_ENV=production`, even with confirmation.
+   Without confirmation it prints per-table deletion counts and exits non-zero without changing data.
+   Alternatively, pass `--force` to the seed script through Prisma:
+   `npm run db:seed -w @project-tracker/api -- -- --force`.
 7. Start both apps:
    ```bash
    npm run dev
@@ -91,8 +95,8 @@ All seeded users share the same password: `Password123!`
 | `npm run typecheck` | Type-check both workspaces |
 | `npm run test` | Run both workspace test suites |
 | `npm run db:migrate` | Apply Prisma migrations |
-| `npm run db:seed` | Seed demo data |
-| `npm run db:reset` | Reset the database and reseed |
+| `SEED_FORCE=true npm run db:seed` | Delete existing data and seed demos (never in production); omit confirmation to preview counts only |
+| `SEED_FORCE=true npm run db:reset` | Reset the database and reseed (destructive; development only) |
 | `npm run db:studio` | Open Prisma Studio with root `.env` |
 
 ## API endpoints
