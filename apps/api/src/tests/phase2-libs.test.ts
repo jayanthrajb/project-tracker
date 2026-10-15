@@ -56,6 +56,7 @@ describe('Phase 2 helpers', () => {
       spentHours: 0,
       tags: [],
       closedAt: null,
+      parentId: null,
     };
     const calls: Array<Array<{ action: ActivityAction; field: string; oldValue: string | null; newValue: string | null }>> = [];
     const tx = {

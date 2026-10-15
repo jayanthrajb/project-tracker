@@ -28,7 +28,7 @@ function fixture(id: string, assigneeId: string | null, reporterId: string, proj
     id, key: id, projectId, assigneeId, reporterId, title: `Task ${id}`, description: 'Keep this description',
     type: ItemType.TASK, status: ItemStatus.OPEN, priority: ItemPriority.P2, risk: ItemRisk.LOW,
     dueDate: null, startedAt: null, closedAt: null, estimateHours: null, spentHours: 5, tags: ['keep'],
-    createdAt: new Date(), updatedAt: new Date(),
+    createdAt: new Date(), updatedAt: new Date(), parentId: null,
     project: { ownerId: 'manager', members: [{ userId: projectId === 'private' ? 'other' : 'dev' }] },
   };
 }
@@ -60,6 +60,7 @@ async function setup() {
         return updated;
       }),
     },
+    itemDependency: { findMany: vi.fn(async () => []) },
     activityLog: { createMany: vi.fn(async () => ({ count: 1 })) },
     notification: { create: vi.fn(async () => ({})) },
   };

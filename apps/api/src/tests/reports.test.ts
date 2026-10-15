@@ -20,7 +20,12 @@ function createMockPrisma() {
   const sqlQueries: string[] = [];
   const itemGroupBy = vi.fn(async (args: {
     by: string[];
-    where: { status?: { in: ItemStatus[] }; dueDate?: unknown; createdAt?: { gte: Date; lt: Date } };
+    where: {
+      status?: { in: ItemStatus[] };
+      dueDate?: unknown;
+      createdAt?: { gte: Date; lt: Date };
+      children?: { none: Record<string, never> };
+    };
   }) => {
     if (args.where.dueDate) {
       return [
@@ -98,7 +103,7 @@ function executeReportSql(query: Prisma.Sql, fixture: string): unknown[] {
       CREATE TYPE pg_temp."ItemStatus" AS ENUM ('BACKLOG', 'OPEN', 'IN_PROGRESS', 'BLOCKED', 'IN_REVIEW', 'DONE');
       CREATE TYPE pg_temp."ActivityAction" AS ENUM ('STATUS_CHANGED', 'BULK_UPDATED', 'UPDATED');
       CREATE TEMP TABLE "Item" (
-        "id" text, "projectId" text, "status" "ItemStatus",
+        "id" text, "projectId" text, "parentId" text, "status" "ItemStatus",
         "createdAt" timestamp, "startedAt" timestamp, "closedAt" timestamp
       );
       CREATE TEMP TABLE "ActivityLog" (
@@ -140,6 +145,7 @@ describe('project report routes', () => {
       value: bucket === ItemStatus.BACKLOG ? 3 : bucket === ItemStatus.OPEN ? 2 : bucket === ItemStatus.DONE ? 1 : 0,
     })));
     expect(state.itemGroupBy.mock.calls[0][0].where.status).toBeUndefined();
+    expect(state.itemGroupBy.mock.calls[0][0].where.children).toEqual({ none: {} });
 
     const workload = await agent.get(`${reportsPath}/workload?from=2026-10-01&to=2026-10-02`);
     expect(workload.status).toBe(200);
@@ -172,6 +178,7 @@ describe('project report routes', () => {
     expect(state.itemGroupBy.mock.calls[3][0].where.dueDate).toEqual({ lt: new Date('2026-10-02T00:00:00.000Z') });
     for (const [args] of state.itemGroupBy.mock.calls.slice(1)) {
       expect(args.where.status).toEqual({ in: committedStatuses });
+      expect(args.where.children).toEqual({ none: {} });
     }
 
     const overdue = await agent.get(`${reportsPath}/overdue?from=2026-10-01&to=2026-10-02`);
@@ -219,6 +226,7 @@ describe('project report routes', () => {
     expect(state.sqlQueries[5]).toContain('SELECT a."oldValue"');
     expect(state.sqlQueries[5]).toContain('ORDER BY a."createdAt" ASC');
     expect(state.queryRaw).toHaveBeenCalledTimes(6);
+    expect(state.sqlQueries.every((query) => query.includes('"parentId"'))).toBe(true);
     for (const [query] of state.queryRaw.mock.calls.filter((_, index) => index !== 4)) {
       expect(query.sql).toMatch(/(?:i\."status"|h\.status) IN \(/);
       for (const status of committedStatuses) expect(query.values).toContain(status);

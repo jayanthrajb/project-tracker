@@ -1,6 +1,6 @@
 import { ActivityAction, type Item, type Prisma } from '@prisma/client';
 
-type ItemSnapshot = Pick<Item, 'id' | 'projectId' | 'title' | 'type' | 'description' | 'status' | 'priority' | 'risk' | 'assigneeId' | 'reporterId' | 'dueDate' | 'estimateHours' | 'spentHours' | 'tags' | 'closedAt'>;
+type ItemSnapshot = Pick<Item, 'id' | 'projectId' | 'title' | 'type' | 'description' | 'status' | 'priority' | 'risk' | 'assigneeId' | 'reporterId' | 'dueDate' | 'estimateHours' | 'spentHours' | 'tags' | 'closedAt' | 'parentId'>;
 
 function valueAsString(value: unknown) {
   if (value === null || value === undefined) return null;
@@ -15,7 +15,7 @@ export async function recordItemChanges(
 ) {
   const fields: Array<keyof ItemSnapshot> = [
     'title', 'type', 'description', 'status', 'priority', 'risk', 'assigneeId',
-    'reporterId', 'dueDate', 'estimateHours', 'spentHours', 'tags', 'closedAt',
+    'reporterId', 'dueDate', 'estimateHours', 'spentHours', 'tags', 'closedAt', 'parentId',
   ];
   const changed = fields.flatMap((field) => {
     const oldValue = valueAsString(input.before[field]);

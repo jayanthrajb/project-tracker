@@ -17,4 +17,31 @@ describe('csv import parsing', () => {
 
     expect(rows[0].errors.length).toBeGreaterThan(0);
   });
+
+  it('preserves relationship column presence and ignores the exported inverse on import', () => {
+    const parsed = parseCsvRows(
+      'projectCode,title,type,reporterEmail,ParentKey,BlocksKeys,BlockedByKeys,RelatesToKeys\n'
+      + 'APP,Linked item,TASK,sara@example.com,,APP-2,APP-3,',
+    );
+    const [row] = normalizeImportRows(parsed.data);
+
+    expect(row.data?.relationshipColumns).toEqual({
+      parentKey: true,
+      blocksKeys: true,
+      relatesToKeys: true,
+    });
+    expect(row.data?.parentKey).toBe('');
+    expect(row.data?.blockedByKeys).toBe('');
+  });
+
+  it('distinguishes absent relationship columns from blank ones', () => {
+    const parsed = parseCsvRows('projectCode,title,type,reporterEmail\nAPP,Unchanged,TASK,sara@example.com');
+    const [row] = normalizeImportRows(parsed.data);
+
+    expect(row.data?.relationshipColumns).toEqual({
+      parentKey: false,
+      blocksKeys: false,
+      relatesToKeys: false,
+    });
+  });
 });
