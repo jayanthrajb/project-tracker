@@ -10,6 +10,7 @@ import { useFocusTrap } from '../lib/useFocusTrap';
 import { cn, formatRelativeTime, toDateInput } from '../lib/utils';
 import { filterOptions } from '../lib/itemViewFilters';
 import { backlogColor } from '../lib/itemColors';
+import { blockedStatusMessage, needsBlockedStatusWarning, openBlockingItems } from '../lib/itemStatusWarnings';
 
 // Loaded on first activation of the Comments tab so the markdown/sanitizer libraries
 // stay out of the initial bundle.
@@ -75,6 +76,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
   const [commentCount, setCommentCount] = useState<number | null>(null);
   const [attachmentCount, setAttachmentCount] = useState<number | null>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<ItemStatus | null>(null);
   useFocusTrap(dialogRef);
 
   const tabParam = searchParams.get('tab');
@@ -153,11 +155,20 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
       {(['type', 'status', 'priority', 'risk'] as const).map((field) => (
         <label key={field} className="grid gap-1 text-sm">
           <span>{field}</span>
-          <select className={cn('rounded-lg border border-slate-300 px-3 py-2', field === 'status' && form.watch('status') === 'BACKLOG' && backlogColor)} {...form.register(field)}>
-            {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'] : field === 'status' ? filterOptions.status : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => (
-              <option key={option} value={option}>{option}</option>
-            ))}
-          </select>
+          {field === 'status' ? (
+            <select className={cn('rounded-lg border border-slate-300 px-3 py-2', form.watch('status') === 'BACKLOG' && backlogColor)} value={form.watch('status')} onChange={(event) => {
+              const status = event.target.value as ItemStatus;
+              const blockers = item ? openBlockingItems(item) : [];
+              if (item && needsBlockedStatusWarning(status) && blockers.length) setPendingStatus(status);
+              else form.setValue('status', status, { shouldDirty: true });
+            }}>
+              {filterOptions.status.map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          ) : (
+            <select className="rounded-lg border border-slate-300 px-3 py-2" {...form.register(field)}>
+              {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'] : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => <option key={option} value={option}>{option}</option>)}
+            </select>
+          )}
         </label>
       ))}
       <label className="grid gap-1 text-sm">
@@ -287,6 +298,18 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
             onClose();
           }}
           onCancel={() => setConfirmDiscard(false)}
+        />
+      )}
+      {pendingStatus && item && (
+        <ConfirmDialog
+          title="Proceed with blocked item?"
+          message={blockedStatusMessage(openBlockingItems(item))}
+          confirmLabel="Proceed"
+          onConfirm={() => {
+            form.setValue('status', pendingStatus, { shouldDirty: true });
+            setPendingStatus(null);
+          }}
+          onCancel={() => setPendingStatus(null)}
         />
       )}
     </div>

@@ -1,6 +1,10 @@
+import { useState } from 'react';
+
+import { ConfirmDialog } from './ConfirmDialog';
 import { cn, formatDate } from '../lib/utils';
 import { backlogColor, priorityColors, riskColors } from '../lib/itemColors';
 import { filterOptions } from '../lib/itemViewFilters';
+import { blockedStatusMessage, needsBlockedStatusWarning, openBlockingItems } from '../lib/itemStatusWarnings';
 import type { Item, ItemPriority, ItemStatus, User } from '../types';
 
 export function ItemsTable({
@@ -25,6 +29,12 @@ export function ItemsTable({
   onOpen: (item: Item) => void;
 }) {
   const allSelected = items.length > 0 && items.every((item) => selectedIds.has(item.id));
+  const [pendingStatus, setPendingStatus] = useState<{ item: Item; status: ItemStatus } | null>(null);
+  const changeStatus = (item: Item, status: ItemStatus) => {
+    const blockers = openBlockingItems(item);
+    if (needsBlockedStatusWarning(status) && blockers.length) setPendingStatus({ item, status });
+    else onDraftChange(item, { status });
+  };
 
   return (
     <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
@@ -77,7 +87,7 @@ export function ItemsTable({
                 </td>
                 <td className="px-3 py-3"><span className={cn('rounded-full px-2 py-1 text-xs font-semibold', riskColors[merged.risk])}>{merged.risk}</span></td>
                 <td className="px-3 py-3">
-                  <select value={merged.status} onChange={(event) => onDraftChange(item, { status: event.target.value as ItemStatus })} className={cn('rounded-lg border border-slate-300 px-2 py-1 text-xs', merged.status === 'BACKLOG' && backlogColor)}>
+                  <select aria-label={`Status for ${merged.key}`} value={merged.status} onChange={(event) => changeStatus(item, event.target.value as ItemStatus)} className={cn('rounded-lg border border-slate-300 px-2 py-1 text-xs', merged.status === 'BACKLOG' && backlogColor)}>
                     {filterOptions.status.map((option) => <option key={option}>{option}</option>)}
                   </select>
                 </td>
@@ -105,6 +115,16 @@ export function ItemsTable({
           })}
         </tbody>
       </table>
+      {pendingStatus && <ConfirmDialog
+        title="Proceed with blocked item?"
+        message={blockedStatusMessage(openBlockingItems(pendingStatus.item))}
+        confirmLabel="Proceed"
+        onConfirm={() => {
+          onDraftChange(pendingStatus.item, { status: pendingStatus.status });
+          setPendingStatus(null);
+        }}
+        onCancel={() => setPendingStatus(null)}
+      />}
     </div>
   );
 }

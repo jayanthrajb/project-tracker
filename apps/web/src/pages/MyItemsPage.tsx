@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'react-hot-toast';
 
 import { ItemFilters } from '../components/ItemFilters';
+import { ConfirmDialog } from '../components/ConfirmDialog';
 import { SavedViews } from '../components/SavedViews';
 import { api, ApiError } from '../lib/api';
 import { backlogColor } from '../lib/itemColors';
@@ -10,6 +11,7 @@ import { canEditItem } from '../lib/itemPermissions';
 import { filterOptions } from '../lib/itemViewFilters';
 import { useSavedViews } from '../lib/useSavedViews';
 import { cn, formatDate } from '../lib/utils';
+import { blockedStatusMessage, needsBlockedStatusWarning, openBlockingItems } from '../lib/itemStatusWarnings';
 import type { Item, ItemStatus, Project, User } from '../types';
 
 type ItemsResponse = { items: Item[]; total: number };
@@ -19,6 +21,7 @@ export function MyItemsPage({ user }: { user: User }) {
   const savedViews = useSavedViews(user, undefined, true);
   const client = useQueryClient();
   const [recent, setRecent] = useState<Record<string, RecentUpdate>>({});
+  const [pendingStatus, setPendingStatus] = useState<{ item: Item; status: ItemStatus; query: string; outsideFilter: boolean } | null>(null);
   const queryKey = ['my-items', user.id, savedViews.query] as const;
   const currentQuery = useRef(savedViews.query);
   useEffect(() => { currentQuery.current = savedViews.query; }, [savedViews.query]);
@@ -99,7 +102,11 @@ export function MyItemsPage({ user }: { user: User }) {
                     className={cn('rounded-lg border border-slate-300 px-2 py-1 text-xs disabled:opacity-60', item.status === 'BACKLOG' && backlogColor)}
                     onChange={(event) => {
                       const status = event.target.value as ItemStatus;
-                      if (!recent[item.id]?.pending && status !== item.status) updateStatus.mutate({ item, status, query: savedViews.query, outsideFilter: Boolean(savedViews.filters.statuses?.length && !savedViews.filters.statuses.includes(status)) });
+                      if (recent[item.id]?.pending || status === item.status) return;
+                      const request = { item, status, query: savedViews.query, outsideFilter: Boolean(savedViews.filters.statuses?.length && !savedViews.filters.statuses.includes(status)) };
+                      const blockers = openBlockingItems(item);
+                      if (needsBlockedStatusWarning(status) && blockers.length) setPendingStatus(request);
+                      else updateStatus.mutate(request);
                     }}>
                     {filterOptions.status.map((status) => <option key={status}>{status}</option>)}
                   </select>
@@ -113,6 +120,16 @@ export function MyItemsPage({ user }: { user: User }) {
           );
         })}
       </div>
+      {pendingStatus && <ConfirmDialog
+        title="Proceed with blocked item?"
+        message={blockedStatusMessage(openBlockingItems(pendingStatus.item))}
+        confirmLabel="Proceed"
+        onConfirm={() => {
+          updateStatus.mutate(pendingStatus);
+          setPendingStatus(null);
+        }}
+        onCancel={() => setPendingStatus(null)}
+      />}
     </div>
   );
 }

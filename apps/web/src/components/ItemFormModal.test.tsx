@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -86,6 +86,21 @@ describe('ItemFormModal tabs', () => {
     expect(screen.getByText(/Read-only, system-set/)).toBeInTheDocument();
     expect(screen.getByLabelText('Due date (target)')).toHaveAttribute('type', 'date');
     expect(document.querySelector('[name="startedAt"], [name="closedAt"]')).toBeNull();
+  });
+
+  it('warns about open blockers before changing status and proceeds only after confirmation', async () => {
+    const user = userEvent.setup();
+    const blockedItem = { ...item, blockedBy: [{ id: 'b1', key: 'BET-1', title: 'Blocking task', status: 'OPEN' as const, projectCode: 'BET' }] };
+    const { onSubmit } = renderModal('/projects/p1', { item: blockedItem });
+    const status = screen.getByLabelText('status');
+    await user.selectOptions(status, 'IN_PROGRESS');
+    const warning = screen.getByRole('alertdialog', { name: 'Proceed with blocked item?' });
+    expect(warning).toHaveTextContent('BET-1 · Blocking task');
+    expect(status).toHaveValue('OPEN');
+    await user.click(within(warning).getByRole('button', { name: 'Proceed' }));
+    expect(status).toHaveValue('IN_PROGRESS');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ status: 'IN_PROGRESS' })));
   });
 
   it('renders relative actual dates with exact timestamps and never submits them', async () => {
