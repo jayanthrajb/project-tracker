@@ -42,6 +42,9 @@ async function setup() {
     fixture('foreign', 'other', 'other'),
     fixture('private', 'dev', 'dev', 'private'),
   ];
+  rows[0].key = 'APO-142';
+  rows[3].key = 'APO-1420';
+  rows[4].key = 'SECRET-1';
   const users = [
     { id: 'dev', role: UserRole.DEVELOPER, name: 'Dev', email: 'dev@example.com', isActive: true },
     { id: 'other', role: UserRole.DEVELOPER, name: 'Other', email: 'other@example.com', isActive: true },
@@ -85,6 +88,38 @@ function ids(response: request.Response): string[] {
 }
 
 describe('My Items session scope', () => {
+  it('supports opt-in case-insensitive key search without changing legacy search or read scope', async () => {
+    const legacy = await request(state.app).get('/api/items?search=APO-142').set('Cookie', state.cookie());
+    expect(ids(legacy)).toEqual([]);
+    for (const search of ['apo-142', 'Task assigned']) {
+      const response = await request(state.app).get('/api/items')
+        .query({ search, searchKeys: 'true', projectId: 'p1', pageSize: 20 }).set('Cookie', state.cookie());
+      expect(response.status).toBe(200);
+      expect(ids(response)).toEqual(search === 'apo-142' ? ['assigned', 'foreign'] : ['assigned']);
+      expect(response.body.pageSize).toBe(20);
+    }
+    const privateItem = await request(state.app).get('/api/items?search=SECRET&searchKeys=true').set('Cookie', state.cookie());
+    expect(ids(privateItem)).toEqual([]);
+    const wrongProject = await request(state.app).get('/api/items?search=APO-142&searchKeys=true&projectId=p2').set('Cookie', state.cookie());
+    expect(ids(wrongProject)).toEqual([]);
+    const bounded = await request(state.app).get('/api/items?search=Task&searchKeys=true&pageSize=2').set('Cookie', state.cookie());
+    expect(bounded.body.items).toHaveLength(2);
+    expect(bounded.body.total).toBe(4);
+  });
+
+  it('ranks exact keys before partial key and title matches', async () => {
+    const exact = await request(state.app).get('/api/items?search=APO-142&searchKeys=true').set('Cookie', state.cookie());
+    expect(exact.body.items.map((entry: { id: string }) => entry.id)).toEqual(['assigned', 'foreign']);
+  });
+
+  it('looks up one current item by ID without widening read scope', async () => {
+    const response = await request(state.app).get('/api/items?id=assigned&pageSize=1').set('Cookie', state.cookie());
+    expect(ids(response)).toEqual(['assigned']);
+    expect(response.body.total).toBe(1);
+    const privateItem = await request(state.app).get('/api/items?id=private&pageSize=1').set('Cookie', state.cookie());
+    expect(ids(privateItem)).toEqual([]);
+  });
+
   it('excludes items the session user can neither edit nor own, while including assignee OR reporter', async () => {
     const response = await request(state.app).get('/api/items?mine=true').set('Cookie', state.cookie());
     expect(response.status).toBe(200);

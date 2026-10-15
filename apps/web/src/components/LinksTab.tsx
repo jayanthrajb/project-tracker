@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 
+import { ItemLinkCombobox } from './ItemLinkCombobox';
 import { api } from '../lib/api';
 import type { Item, ItemLink } from '../types';
 
@@ -12,20 +13,6 @@ type Operation =
   | { kind: 'parent'; childId: string; parentId: string | null }
   | { kind: 'add-dependency'; targetId: string; type: DependencyType }
   | { kind: 'remove-dependency'; targetId: string; type: DependencyType };
-
-async function loadItems() {
-  const items: Item[] = [];
-  let total = 0;
-  let page = 1;
-  do {
-    const result = await api<ItemsResponse>(`/items?page=${page}&pageSize=100`);
-    items.push(...result.items);
-    total = result.total;
-    if (!result.items.length) break;
-    page += 1;
-  } while ((page - 1) * 100 < total);
-  return items;
-}
 
 function listIds(data: unknown) {
   if (!data || typeof data !== 'object' || !('items' in data) || !Array.isArray(data.items)) return [];
@@ -51,13 +38,13 @@ async function invalidateAffected(client: ReturnType<typeof useQueryClient>, ids
 
 export function LinksTab({ item }: { item: Item }) {
   const client = useQueryClient();
-  const [selection, setSelection] = useState<Record<'parent' | 'child' | EditableGroup, string>>({
-    parent: '', child: '', blocks: '', relatesTo: '',
+  const [selection, setSelection] = useState<Record<'parent' | 'child' | EditableGroup, Item | null>>({
+    parent: null, child: null, blocks: null, relatesTo: null,
   });
   const [error, setError] = useState<string | null>(null);
   const itemsQuery = useQuery({
     queryKey: ['item-links', item.id],
-    queryFn: loadItems,
+    queryFn: () => api<ItemsResponse>(`/items?${new URLSearchParams({ id: item.id, pageSize: '1' })}`),
   });
   const mutation = useMutation({
     mutationFn: async (operation: Operation) => {
@@ -79,22 +66,15 @@ export function LinksTab({ item }: { item: Item }) {
     },
     onSuccess: async (result) => {
       setError(null);
-      setSelection((current) => ({ ...current, [result.selection]: '' }));
+      setSelection((current) => ({ ...current, [result.selection]: null }));
       await invalidateAffected(client, result.affected);
     },
     onError: (failure) => setError(failure instanceof Error ? failure.message : 'Could not update item links'),
   });
 
-  const current = itemsQuery.data?.find((entry) => entry.id === item.id) ?? item;
-  const allItems = itemsQuery.data ?? [];
-  const sameProject = allItems.filter((entry) => entry.projectId === item.projectId && entry.id !== item.id);
-  const parentIds = new Set(current.children?.map((child) => child.id) ?? []);
-  const childOptions = sameProject.filter((entry) => !parentIds.has(entry.id));
-  const parentOptions = sameProject;
-  const targetItems = allItems.filter((entry) => entry.id !== item.id);
+  const current = itemsQuery.data?.items.find((entry) => entry.id === item.id) ?? item;
   const linkTarget = (link: ItemLink) => {
-    const target = allItems.find((entry) => entry.id === link.id);
-    const projectId = target?.projectId ?? item.projectId;
+    const projectId = link.projectId ?? item.projectId;
     return `/projects/${encodeURIComponent(projectId)}?item=${encodeURIComponent(link.id)}`;
   };
   const renderLinks = (links: ItemLink[] | undefined, group: 'parent' | 'children' | 'blocks' | 'blockedBy' | 'relatesTo') => (
@@ -112,8 +92,6 @@ export function LinksTab({ item }: { item: Item }) {
       </ul>
     ) : null
   );
-  const selectClasses = 'min-w-0 rounded-lg border border-slate-300 px-3 py-2 text-sm';
-
   return (
     <div className="grid gap-5">
       {error && <p role="alert" className="text-sm text-rose-700">{error}</p>}
@@ -124,11 +102,8 @@ export function LinksTab({ item }: { item: Item }) {
               <h4 className="font-medium">Parent</h4>
               {renderLinks(current.parent ? [current.parent] : [], 'parent') ?? <p className="text-sm text-slate-500">No parent</p>}
               <div className="flex flex-wrap gap-2">
-                <select aria-label="Parent item" className={selectClasses} value={selection.parent} onChange={(event) => setSelection((value) => ({ ...value, parent: event.target.value }))}>
-                  <option value="">Choose a parent</option>
-                  {parentOptions.map((entry) => <option key={entry.id} value={entry.id}>{entry.key} · {entry.title} · {entry.status}</option>)}
-                </select>
-                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.parent || mutation.isPending} onClick={() => mutation.mutate({ kind: 'parent', childId: item.id, parentId: selection.parent })}>Set parent</button>
+                <ItemLinkCombobox label="Parent item" projectId={item.projectId} excludedIds={[item.id, ...(current.parent ? [current.parent.id] : [])]} value={selection.parent} onChange={(parent) => setSelection((value) => ({ ...value, parent }))} disabled={mutation.isPending} />
+                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.parent || mutation.isPending} onClick={() => selection.parent && mutation.mutate({ kind: 'parent', childId: item.id, parentId: selection.parent.id })}>Set parent</button>
                 {current.parent && <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={mutation.isPending} onClick={() => mutation.mutate({ kind: 'parent', childId: item.id, parentId: null })}>Clear parent</button>}
               </div>
             </section>
@@ -136,11 +111,8 @@ export function LinksTab({ item }: { item: Item }) {
               <h4 className="font-medium">Children</h4>
               {renderLinks(current.children, 'children')}
               <div className="flex flex-wrap gap-2">
-                <select aria-label="Child item" className={selectClasses} value={selection.child} onChange={(event) => setSelection((value) => ({ ...value, child: event.target.value }))}>
-                  <option value="">Choose a child</option>
-                  {childOptions.map((entry) => <option key={entry.id} value={entry.id}>{entry.key} · {entry.title} · {entry.status}</option>)}
-                </select>
-                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.child || mutation.isPending} onClick={() => mutation.mutate({ kind: 'parent', childId: selection.child, parentId: item.id })}>Add child</button>
+                <ItemLinkCombobox label="Child item" projectId={item.projectId} excludedIds={[item.id, ...(current.children ?? []).map((child) => child.id)]} value={selection.child} onChange={(child) => setSelection((value) => ({ ...value, child }))} disabled={mutation.isPending} />
+                <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.child || mutation.isPending} onClick={() => selection.child && mutation.mutate({ kind: 'parent', childId: selection.child.id, parentId: item.id })}>Add child</button>
               </div>
             </section>
             {([
@@ -149,17 +121,16 @@ export function LinksTab({ item }: { item: Item }) {
               ['relatesTo', 'Relates to', 'RELATES_TO'],
             ] as const).map(([group, label, type]) => {
               const links = current[group] ?? [];
-              const linkedIds = new Set(links.map((link) => link.id));
               return (
                 <section key={group} aria-label={label} className="grid gap-2">
                   <h4 className="font-medium">{label}</h4>
                   {renderLinks(links, group)}
                   {type && <div className="flex flex-wrap gap-2">
-                    <select aria-label={`${label} item`} className={selectClasses} value={selection[group as EditableGroup]} onChange={(event) => setSelection((value) => ({ ...value, [group]: event.target.value }))}>
-                      <option value="">Choose an item</option>
-                      {targetItems.filter((entry) => !linkedIds.has(entry.id)).map((entry) => <option key={entry.id} value={entry.id}>{entry.key} · {entry.title} · {entry.status} · {entry.project.code}</option>)}
-                    </select>
-                    <button type="button" aria-label={`Add ${label.toLowerCase()} link`} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection[group as EditableGroup] || mutation.isPending} onClick={() => mutation.mutate({ kind: 'add-dependency', targetId: selection[group as EditableGroup], type })}>Add</button>
+                    <ItemLinkCombobox label={`${label} item`} excludedIds={[item.id, ...links.map((link) => link.id)]} value={selection[group as EditableGroup]} onChange={(target) => setSelection((value) => ({ ...value, [group]: target }))} disabled={mutation.isPending} />
+                    <button type="button" aria-label={`Add ${label.toLowerCase()} link`} className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection[group as EditableGroup] || mutation.isPending} onClick={() => {
+                      const target = selection[group as EditableGroup];
+                      if (target) mutation.mutate({ kind: 'add-dependency', targetId: target.id, type });
+                    }}>Add</button>
                   </div>}
                 </section>
               );

@@ -39,6 +39,7 @@ const itemSchema = z.object({
 });
 
 const querySchema = z.object({
+  id: z.string().optional(),
   projectId: z.string().optional(),
   assigneeId: z.string().optional(),
   mine: z.enum(['true', 'false']).optional().transform((value) => value === 'true'),
@@ -48,6 +49,7 @@ const querySchema = z.object({
   priority: z.union([z.string(), z.array(z.string())]).optional(),
   risk: z.union([z.string(), z.array(z.string())]).optional(),
   search: z.string().optional(),
+  searchKeys: z.enum(['true', 'false']).optional(),
   dueBefore: z.string().optional(),
   sort: z.string().optional(),
   page: z.coerce.number().int().min(1).default(1),
@@ -91,8 +93,8 @@ const dependencySchema = z.object({
   type: z.nativeEnum(DependencyType).default(DependencyType.BLOCKS),
 });
 
-function itemLink(item: { id: string; key: string; title: string; status: ItemStatus; project: { code: string } }) {
-  return { id: item.id, key: item.key, title: item.title, status: item.status, projectCode: item.project.code };
+function itemLink(item: { id: string; key: string; title: string; status: ItemStatus; project: { id: string; code: string } }) {
+  return { id: item.id, key: item.key, title: item.title, status: item.status, projectId: item.project.id, projectCode: item.project.code };
 }
 
 async function enrichItems(items: ItemRecord[], user?: { id: string; role: UserRole }) {
@@ -101,7 +103,7 @@ async function enrichItems(items: ItemRecord[], user?: { id: string; role: UserR
   const [hierarchy, dependencies] = await Promise.all([
     prisma.item.findMany({
       where: { OR: [{ id: { in: ids } }, { parentId: { in: ids } }] },
-      select: { id: true, parentId: true, key: true, title: true, status: true, project: { select: { code: true } } },
+      select: { id: true, parentId: true, key: true, title: true, status: true, project: { select: { id: true, code: true } } },
     }),
     prisma.itemDependency.findMany({
       where: { OR: [{ fromId: { in: ids } }, { toId: { in: ids } }] },
@@ -121,7 +123,7 @@ async function enrichItems(items: ItemRecord[], user?: { id: string; role: UserR
     ? []
     : await prisma.item.findMany({
       where: applyReadScope({ id: { in: [...linkedIds] } }, user),
-      select: { id: true, key: true, title: true, status: true, project: { select: { code: true } } },
+      select: { id: true, key: true, title: true, status: true, project: { select: { id: true, code: true } } },
     });
   const readableById = new Map(readable.map((item) => [item.id, itemLink(item)]));
   const parentById = new Map(hierarchy.filter((item) => item.parentId).map((item) => [item.id, item.parentId!]));
@@ -230,6 +232,10 @@ async function listItems(rawQuery: unknown, user?: { id: string; role: UserRole 
   });
 
   const baseWhere = buildItemWhere(filters);
+  if (query.id) baseWhere.id = query.id;
+  if (query.search && query.searchKeys === 'true') {
+    baseWhere.OR = [...(baseWhere.OR ?? []), { key: { contains: query.search, mode: 'insensitive' } }];
+  }
   if (query.mine) {
     if (!user) throw new AppError(401, 'Authentication required');
     baseWhere.AND = [{ OR: [{ assigneeId: user.id }, { reporterId: user.id }] }];
@@ -239,6 +245,14 @@ async function listItems(rawQuery: unknown, user?: { id: string; role: UserRole 
   const related = await enrichItems(rows, user);
   const enriched = related.map((item) => ({ ...item, score: calculateItemScore(item) }));
   const sorted = sortItems(enriched, query.sort);
+  if (query.search && query.searchKeys === 'true') {
+    const search = query.search.toLowerCase();
+    const rank = (item: ItemRecord) => item.key.toLowerCase() === search ? 0
+      : item.key.toLowerCase().startsWith(search) ? 1
+        : item.title.toLowerCase().startsWith(search) ? 2
+          : item.title.toLowerCase().includes(search) ? 3 : 4;
+    sorted.sort((a, b) => rank(a) - rank(b));
+  }
   const start = (query.page - 1) * query.pageSize;
   const paged = options?.exportAll ? sorted : sorted.slice(start, start + query.pageSize);
 
