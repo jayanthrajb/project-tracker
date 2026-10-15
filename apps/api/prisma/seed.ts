@@ -12,9 +12,9 @@ import {
 } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
+import { assertSeedAllowed } from './seed-guard.js';
 import { hashPassword } from '../src/lib/auth.js';
 import '../src/lib/env.js';
-import { assertSeedAllowed } from './seed-guard.js';
 
 const prisma = new PrismaClient();
 const defaultPassword = 'Password123!';

@@ -22,9 +22,30 @@ function database() {
   };
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
 
 describe('seed safety guard', () => {
+  it('preserves an incoming production environment even if configuration overrides it', async () => {
+    vi.resetModules();
+    vi.stubEnv('NODE_ENV', 'production');
+    const { assertSeedAllowed: guard } = await import('../../prisma/seed-guard.js');
+    vi.stubEnv('NODE_ENV', 'development');
+    vi.stubEnv('SEED_FORCE', 'true');
+    const prisma = database();
+
+    await expect(guard(prisma, process.env, ['--force'])).rejects.toThrow(
+      'Seeding is disabled in production. There is no override.',
+    );
+    for (const table of Object.values(prisma)) {
+      expect(table.count).not.toHaveBeenCalled();
+      expect(table.deleteMany).not.toHaveBeenCalled();
+    }
+  });
+
   it.each([
     [{ NODE_ENV: 'production' }, []],
     [{ NODE_ENV: 'production' }, ['--force']],

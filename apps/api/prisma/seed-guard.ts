@@ -1,3 +1,6 @@
+// Capture this before the API environment loader can override NODE_ENV from a .env file.
+const startedInProduction = process.env.NODE_ENV === 'production';
+
 const tables = [
   'projectMember',
   'item',
@@ -19,7 +22,7 @@ export async function assertSeedAllowed(
   env: NodeJS.ProcessEnv = process.env,
   args: readonly string[] = process.argv.slice(2),
 ) {
-  if (env.NODE_ENV === 'production') {
+  if (startedInProduction || env.NODE_ENV === 'production') {
     throw new Error('Seeding is disabled in production. There is no override.');
   }
 
