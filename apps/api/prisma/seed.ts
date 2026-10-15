@@ -14,6 +14,7 @@ import type { Prisma } from '@prisma/client';
 
 import { hashPassword } from '../src/lib/auth.js';
 import '../src/lib/env.js';
+import { assertSeedAllowed } from './seed-guard.js';
 
 const prisma = new PrismaClient();
 const defaultPassword = 'Password123!';
@@ -27,6 +28,8 @@ function daysFromNow(days?: number | null) {
 }
 
 async function main() {
+  await assertSeedAllowed(prisma);
+
   await prisma.projectMember.deleteMany();
   await prisma.item.deleteMany();
   await prisma.project.deleteMany();
