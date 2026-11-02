@@ -7,7 +7,7 @@ import { ItemFormModal } from '../components/ItemFormModal';
 import { ItemsBoard, ItemsTable } from '../components/ItemsTable';
 import { ItemFilters } from '../components/ItemFilters';
 import { SavedViews } from '../components/SavedViews';
-import { api } from '../lib/api';
+import { api, apiErrorMessage } from '../lib/api';
 import { findItem } from '../lib/findItem';
 import { useSavedViews } from '../lib/useSavedViews';
 import { filterOptions } from '../lib/itemViewFilters';
@@ -77,6 +77,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
       await queryClient.invalidateQueries({ queryKey: ['dashboard'] });
       invalidateActivity([item.id]);
     },
+    onError: (error) => toast.error(apiErrorMessage(error, 'Could not update status')),
   });
 
   const saveBulk = useMutation({
@@ -94,7 +95,7 @@ export function ProjectDetailPage({ user }: { user: User }) {
       toast.success('Saved staged changes');
       invalidateActivity(Object.keys(drafts));
     },
-    onError: (error: ApiError) => toast.error(error.message),
+    onError: (error: ApiError) => toast.error(apiErrorMessage(error)),
   });
 
   useEffect(() => {

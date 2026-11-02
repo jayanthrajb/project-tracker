@@ -66,6 +66,17 @@ export class ApiError extends Error {
   }
 }
 
+export function apiErrorMessage(error: unknown, fallback = 'Something went wrong') {
+  if (error instanceof ApiError && error.details && typeof error.details === 'object' && 'perItem' in error.details) {
+    const perItem = error.details.perItem;
+    if (perItem && typeof perItem === 'object') {
+      const messages = [...new Set(Object.values(perItem).filter((value): value is string => typeof value === 'string'))];
+      if (messages.length > 0) return messages.join(' ');
+    }
+  }
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? 'GET';
   const csrfToken = typeof document !== 'undefined'

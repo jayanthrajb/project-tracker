@@ -160,15 +160,20 @@ function createMockPrisma() {
       }),
     },
     itemDependency: {
-      findMany: vi.fn(async ({ where }: any) => dependencies.filter((dependency) =>
+      findMany: vi.fn(async ({ where, select }: any) => dependencies.filter((dependency) =>
         where?.OR ? where.OR.some((clause: any) =>
           (clause.fromId?.in && clause.fromId.in.includes(dependency.fromId))
           || (clause.toId?.in && clause.toId.in.includes(dependency.toId)))
           : (!where?.fromId || (typeof where.fromId === 'string'
             ? dependency.fromId === where.fromId
             : where.fromId.in.includes(dependency.fromId)))
-            && (!where?.toId || dependency.toId === where.toId)
-            && (!where?.type || dependency.type === where.type))),
+            && (!where?.toId || (typeof where.toId === 'string'
+              ? dependency.toId === where.toId
+              : where.toId.in.includes(dependency.toId)))
+            && (!where?.type || dependency.type === where.type))
+        .map((dependency) => (select?.from
+          ? { ...dependency, from: items.find((item) => item.id === dependency.fromId) }
+          : dependency))),
       findUnique: vi.fn(async ({ where }: any) => {
         const dependency = dependencies.find((entry) => entry.id === where.id
           || (entry.fromId === where.fromId_toId_type?.fromId
@@ -347,6 +352,108 @@ describe('auth and items routes', () => {
     const blockingDependency = mockPrisma.dependencies.find((dependency: { type: DependencyType }) => dependency.type === DependencyType.BLOCKS)!;
     expect((await agent.delete(`/api/items/dependencies/${blockingDependency.id}`).set('x-csrf-token', csrf)).status).toBe(204);
     expect(mockPrisma.dependencies.some((dependency: { type: DependencyType }) => dependency.type === DependencyType.BLOCKS)).toBe(false);
+  });
+
+  it.each(['single', 'bulk'] as const)('blocks closing with open children or blockers via %s updates, but allows reopening', async (path) => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const make = async (title: string, parentId?: string, projectId = 'project-1') => (await agent.post('/api/items')
+      .set('x-csrf-token', csrf)
+      .send({ projectId, title, type: ItemType.TASK, reporterId: 'manager-1', parentId })).body.item;
+    const link = (fromId: string, toId: string, type: DependencyType = DependencyType.BLOCKS) =>
+      agent.post('/api/items/dependencies').set('x-csrf-token', csrf).send({ fromId, toId, type });
+    const setStatus = (updates: Array<{ id: string; status: ItemStatus }>) => path === 'single'
+      ? agent.patch(`/api/items/${updates[0].id}`).set('x-csrf-token', csrf).send({ status: updates[0].status })
+      : agent.patch('/api/items/bulk').set('x-csrf-token', csrf).send({ updates });
+
+    const parent = await make('Parent');
+    const child = await make('Child', parent.id);
+    const rejected = await setStatus([{ id: parent.id, status: ItemStatus.DONE }]);
+    expect(rejected.status).toBe(400);
+    expect(JSON.stringify(rejected.body)).toContain(`open child items ${child.key}`);
+    if (path === 'bulk') {
+      const together = await setStatus([
+        { id: parent.id, status: ItemStatus.DONE },
+        { id: child.id, status: ItemStatus.DONE },
+      ]);
+      expect(together.status).toBe(200);
+    } else {
+      expect((await setStatus([{ id: child.id, status: ItemStatus.DONE }])).status).toBe(200);
+      expect((await setStatus([{ id: parent.id, status: ItemStatus.DONE }])).status).toBe(200);
+    }
+    expect((await setStatus([{ id: child.id, status: ItemStatus.OPEN }])).status).toBe(200);
+
+    const blocker = await make('Blocker', undefined, 'project-2');
+    const blocked = await make('Blocked');
+    const related = await make('Related');
+    expect((await link(blocker.id, blocked.id)).status).toBe(201);
+    expect((await link(related.id, blocked.id, DependencyType.RELATES_TO)).status).toBe(201);
+    const blockedClose = await setStatus([{ id: blocked.id, status: ItemStatus.DONE }]);
+    expect(blockedClose.status).toBe(400);
+    expect(JSON.stringify(blockedClose.body)).toContain(`open blockers ${blocker.key}`);
+    expect(JSON.stringify(blockedClose.body)).not.toContain(related.key);
+    expect((await setStatus([{ id: blocker.id, status: ItemStatus.DONE }])).status).toBe(200);
+    expect((await setStatus([{ id: blocked.id, status: ItemStatus.DONE }])).status).toBe(200);
+    expect((await setStatus([{ id: blocker.id, status: ItemStatus.IN_PROGRESS }])).status).toBe(200);
+    expect((await link(blocker.id, blocked.id)).status).toBe(201);
+  });
+
+  it('rejects new open children or blockers on closed items', async () => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const make = (title: string, extra: Record<string, unknown> = {}) => agent.post('/api/items').set('x-csrf-token', csrf)
+      .send({ projectId: 'project-1', title, type: ItemType.TASK, reporterId: 'manager-1', ...extra });
+    const closed = (await make('Closed', { status: ItemStatus.DONE })).body.item;
+    const open = (await make('Open')).body.item;
+
+    const openChild = await make('Open child', { parentId: closed.id });
+    expect(openChild.status).toBe(400);
+    expect(openChild.body.error.message).toContain(`Reopen ${closed.key} first`);
+    expect((await make('Done child', { parentId: closed.id, status: ItemStatus.DONE })).status).toBe(201);
+    expect((await agent.patch(`/api/items/${open.id}`).set('x-csrf-token', csrf).send({ parentId: closed.id })).status).toBe(400);
+    expect((await agent.post('/api/items/dependencies').set('x-csrf-token', csrf)
+      .send({ fromId: open.id, toId: closed.id, type: DependencyType.BLOCKS })).status).toBe(400);
+    expect((await agent.post('/api/items/dependencies').set('x-csrf-token', csrf)
+      .send({ fromId: open.id, toId: closed.id, type: DependencyType.RELATES_TO })).status).toBe(201);
+  });
+
+  it('applies closing rules to CSV import, allowing a parent and child to close in one file', async () => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const importCsv = (rows: string[]) => agent.post('/api/items/import').set('x-csrf-token', csrf)
+      .attach('file', Buffer.from(['projectCode,Key,title,type,status,reporterEmail', ...rows].join('\n')), {
+        filename: 'items.csv', contentType: 'text/csv',
+      });
+    const make = (title: string, parentId?: string) => agent.post('/api/items').set('x-csrf-token', csrf)
+      .send({ projectId: 'project-1', title, type: ItemType.TASK, reporterId: 'manager-1', parentId });
+    const parent = (await make('Parent')).body.item;
+    const child = (await make('Child', parent.id)).body.item;
+
+    const alone = await importCsv([`APP,${parent.key},Parent,TASK,DONE,sara.manager@example.com`]);
+    expect(alone.body.errors).toEqual([{ row: 2, errors: [expect.stringContaining(`open child items ${child.key}`)] }]);
+    expect(alone.body.updatedCount).toBe(0);
+
+    const together = await importCsv([
+      `APP,${parent.key},Parent,TASK,DONE,sara.manager@example.com`,
+      `APP,${child.key},Child,TASK,DONE,sara.manager@example.com`,
+    ]);
+    expect(together.body.errors).toEqual([]);
+    expect(together.body.updatedCount).toBe(2);
   });
 
   it('round-trips item relationships through key-based CSV and preserves absent columns', async () => {

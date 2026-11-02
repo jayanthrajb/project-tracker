@@ -5,7 +5,7 @@ import { toast } from 'react-hot-toast';
 import { ItemFilters } from '../components/ItemFilters';
 import { ConfirmDialog } from '../components/ConfirmDialog';
 import { SavedViews } from '../components/SavedViews';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, apiErrorMessage } from '../lib/api';
 import { backlogColor } from '../lib/itemColors';
 import { canEditItem } from '../lib/itemPermissions';
 import { filterOptions } from '../lib/itemViewFilters';
@@ -61,7 +61,9 @@ export function MyItemsPage({ user }: { user: User }) {
       });
       toast.error(error instanceof ApiError && error.status === 403
         ? 'You no longer have permission to update this item. Status reverted.'
-        : 'Could not update status. Status reverted. Please try again.');
+        : error instanceof ApiError && error.status === 400
+          ? `${apiErrorMessage(error)} Status reverted.`
+          : 'Could not update status. Status reverted. Please try again.');
     },
     onSettled: (_data, _error, { query }) => {
       void client.invalidateQueries({ queryKey: ['my-items', user.id, query], exact: true });

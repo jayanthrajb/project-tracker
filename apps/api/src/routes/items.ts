@@ -16,7 +16,15 @@ import { recordItemChanges, recordItemCreation, recordItemDeletion } from '../li
 import { notifyItemChanges, notifyItemCreated } from '../lib/notifications.js';
 import { storage } from '../lib/storage/index.js';
 import { itemStartData } from '../lib/item-status.js';
-import { assertNoBlocksCycle, assertValidParent, normalizeDependency } from '../lib/item-relations.js';
+import {
+  assertCanAddBlocker,
+  assertCanAddChild,
+  assertCanClose,
+  assertNoBlocksCycle,
+  assertValidParent,
+  findCloseViolations,
+  normalizeDependency,
+} from '../lib/item-relations.js';
 import { requireAuth } from '../middleware/auth.js';
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -192,6 +200,26 @@ async function assertCanCreateItem(
   }
 }
 
+// Closing requires closed children and blockers; a new parent link must not
+// put an open child under a closed parent. Reopening stays allowed.
+async function assertStatusRelationRules(
+  tx: Parameters<typeof assertCanClose>[0],
+  before: { id: string; key: string; status: ItemStatus; parentId: string | null },
+  change: { status?: ItemStatus; parentId?: string | null },
+  nextStatus: ReadonlyMap<string, ItemStatus> = new Map(),
+) {
+  const status = change.status ?? before.status;
+  if (status === ItemStatus.DONE && before.status !== ItemStatus.DONE) {
+    await assertCanClose(tx, before.id, nextStatus);
+  }
+  if (change.parentId && change.parentId !== before.parentId) {
+    const parent = await tx.item.findUnique({ where: { id: change.parentId }, select: { id: true, key: true, status: true } });
+    if (parent) {
+      assertCanAddChild({ key: parent.key, status: nextStatus.get(parent.id) ?? parent.status }, { key: before.key, status });
+    }
+  }
+}
+
 function normalizeQueryArray(value?: string | string[]) {
   if (!value) return [];
   return Array.isArray(value) ? value : value.split(',').filter(Boolean);
@@ -284,6 +312,8 @@ itemsRouter.post('/dependencies', asyncHandler(async (req, res) => {
     const normalized = normalizeDependency(input.fromId, input.toId, input.type);
     if (normalized.type === DependencyType.BLOCKS) {
       await assertNoBlocksCycle(tx, normalized.fromId, normalized.toId);
+      const existingLink = await tx.itemDependency.findUnique({ where: { fromId_toId_type: normalized } });
+      if (!existingLink) assertCanAddBlocker(from, to);
     }
     return tx.itemDependency.upsert({
       where: {
@@ -325,6 +355,10 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
 
   const item = await prisma.$transaction(async (tx) => {
     await assertValidParent(tx, undefined, input.projectId, input.parentId ?? null);
+    if (input.parentId) {
+      const parent = await tx.item.findUnique({ where: { id: input.parentId }, select: { key: true, status: true } });
+      if (parent) assertCanAddChild(parent, { key: 'the new item', status: input.status });
+    }
     const key = await nextItemKey(tx as typeof prisma, input.projectId);
     const created = await tx.item.create({
       data: {
@@ -366,6 +400,7 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
   const byId = new Map(existing.map((item) => [item.id, item]));
   const errors: Record<string, string> = {};
   let invalidHierarchy = false;
+  const nextStatus = new Map(input.updates.flatMap((entry) => (entry.status ? [[entry.id, entry.status] as const] : [])));
 
   for (const update of input.updates) {
     const item = byId.get(update.id);
@@ -386,9 +421,10 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
       if (update.parentId !== undefined) {
         await assertValidParent(prisma, update.id, nextProjectId, update.parentId);
       }
+      await assertStatusRelationRules(prisma, item, update, nextStatus);
     } catch (error) {
       errors[update.id] = error instanceof AppError ? error.message : 'Invalid update';
-      if (error instanceof AppError && error.statusCode === 400 && update.parentId !== undefined) {
+      if (error instanceof AppError && error.statusCode === 400) {
         invalidHierarchy = true;
       }
     }
@@ -409,6 +445,7 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
       if (update.parentId !== undefined) {
         await assertValidParent(tx, update.id, before.projectId, update.parentId);
       }
+      await assertStatusRelationRules(tx, before, update, nextStatus);
       const after = await tx.item.update({
         where: { id: update.id },
         data: {
@@ -472,6 +509,7 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
     if (input.parentId !== undefined) {
       await assertValidParent(tx, itemId, before.projectId, input.parentId);
     }
+    await assertStatusRelationRules(tx, before, input);
     const after = await tx.item.update({
       where: { id: itemId },
       data: {
@@ -555,6 +593,10 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
   const created: ItemRecord[] = [];
   const updated: ItemRecord[] = [];
   const importedByRow = new Map<number, ItemRecord>();
+  const importStatus = new Map(validRows.flatMap((row) => {
+    const match = row.key ? existingByKey.get(row.key) : undefined;
+    return match ? [[match.id, row.status] as const] : [];
+  }));
   for (const entry of normalized) {
     const data = entry.data;
     if (!data) continue;
@@ -582,6 +624,13 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
     if (existing && !canEditItem(req.user.id, req.user.role, existing)) {
       errors.push({ row: entry.index + 2, errors: [`Key: You cannot edit ${data.key}`] });
       continue;
+    }
+    if (existing && data.status === ItemStatus.DONE && existing.status !== ItemStatus.DONE) {
+      const message = (await findCloseViolations(prisma, [existing.id], importStatus)).get(existing.id);
+      if (message) {
+        errors.push({ row: entry.index + 2, errors: [`Status: ${message}`] });
+        continue;
+      }
     }
     await assertCanCreateItem(req.user, project.id, reporter.id, assignee?.id ?? null);
 
@@ -672,13 +721,22 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
         if (!before) throw new AppError(404, `Row item ${item.key} not found`);
         if (data.relationshipColumns.parentKey) {
           await assertValidParent(tx, item.id, item.projectId, parent?.id ?? null);
+          await assertStatusRelationRules(tx, before, { parentId: parent?.id ?? null });
         }
         if (data.relationshipColumns.blocksKeys) {
+          const previousTargets = new Set((await tx.itemDependency.findMany({
+            where: { fromId: item.id, type: DependencyType.BLOCKS },
+            select: { toId: true },
+          })).map((edge) => edge.toId));
           await tx.itemDependency.deleteMany({ where: { fromId: item.id, type: DependencyType.BLOCKS } });
           for (const target of blockTargets) {
             if (!target.item) continue;
             const normalized = normalizeDependency(item.id, target.item.id, DependencyType.BLOCKS);
             await assertNoBlocksCycle(tx, normalized.fromId, normalized.toId);
+            if (!previousTargets.has(target.item.id)) {
+              const blocked = await tx.item.findUnique({ where: { id: target.item.id }, select: { key: true, status: true } });
+              if (blocked) assertCanAddBlocker(before, blocked);
+            }
             await tx.itemDependency.create({ data: normalized });
           }
         }
