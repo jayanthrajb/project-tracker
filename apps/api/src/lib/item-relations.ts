@@ -1,4 +1,4 @@
-import { DependencyType, ItemStatus } from '@prisma/client';
+import { DependencyType, ItemStatus, ItemType } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
 import { AppError } from './errors.js';
@@ -126,5 +126,11 @@ export function assertCanAddChild(parent: LinkEnd, child: LinkEnd) {
 export function assertCanAddBlocker(blocker: LinkEnd, blocked: LinkEnd) {
   if (blocked.status === ItemStatus.DONE && blocker.status !== ItemStatus.DONE) {
     throw new AppError(400, `Cannot make open item ${blocker.key} block closed item ${blocked.key}. Reopen ${blocked.key} first.`);
+  }
+}
+
+export function assertEpicTopLevel(type: ItemType, parentId: string | null | undefined) {
+  if (type === ItemType.EPIC && parentId) {
+    throw new AppError(400, 'An epic is a top-level item and cannot have a parent');
   }
 }

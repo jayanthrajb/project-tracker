@@ -6,7 +6,7 @@ A lightweight, attention-first project and task tracking app for managers who ne
 
 - Email/password auth with roles: `ADMIN`, `MANAGER`, `DEVELOPER`
 - Project management with member assignment
-- Item tracking for tasks, bugs, risks, and enhancements
+- Item tracking for epics, tasks, bugs, risks, and enhancements (epics are top-level containers for broader work)
 - Attention-first dashboard with overdue, due soon, blocked, and needs-attention buckets
 - Project table view with inline quick edits
 - Project board view with drag-and-drop status changes

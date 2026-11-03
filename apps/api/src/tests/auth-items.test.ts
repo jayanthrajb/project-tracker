@@ -456,6 +456,45 @@ describe('auth and items routes', () => {
     expect(together.body.updatedCount).toBe(2);
   });
 
+  it('keeps epics top-level while letting them parent other items', async () => {
+    vi.resetModules();
+    const mockPrisma = createMockPrisma();
+    vi.doMock('../lib/prisma.js', () => ({ prisma: mockPrisma }));
+    const { createApp } = await import('../app.js');
+    const agent = request.agent(createApp());
+    const login = await agent.post('/api/auth/login').send({ email: 'sara.manager@example.com', password: 'Password123!' });
+    const csrf = csrfFrom(login.headers['set-cookie']);
+    const make = (title: string, type: ItemType, parentId?: string) => agent.post('/api/items').set('x-csrf-token', csrf)
+      .send({ projectId: 'project-1', title, type, reporterId: 'manager-1', parentId });
+
+    const epic = await make('Billing revamp', ItemType.EPIC);
+    expect(epic.status).toBe(201);
+    expect(epic.body.item.type).toBe(ItemType.EPIC);
+    const story = await make('Invoices', ItemType.ENHANCEMENT, epic.body.item.id);
+    expect(story.status).toBe(201);
+    expect(story.body.item.parent.id).toBe(epic.body.item.id);
+
+    const nested = await make('Nested epic', ItemType.EPIC, epic.body.item.id);
+    expect(nested.status).toBe(400);
+    expect(nested.body.error.message).toBe('An epic is a top-level item and cannot have a parent');
+    const other = (await make('Other epic', ItemType.EPIC)).body.item;
+    expect((await agent.patch(`/api/items/${other.id}`).set('x-csrf-token', csrf).send({ parentId: epic.body.item.id })).status).toBe(400);
+    expect((await agent.patch(`/api/items/${story.body.item.id}`).set('x-csrf-token', csrf).send({ type: ItemType.EPIC })).status).toBe(400);
+    expect((await agent.patch('/api/items/bulk').set('x-csrf-token', csrf)
+      .send({ updates: [{ id: story.body.item.id, type: ItemType.EPIC }] })).status).toBe(400);
+
+    const csv = await agent.post('/api/items/import').set('x-csrf-token', csrf).attach('file', Buffer.from([
+      'projectCode,Key,title,type,reporterEmail,ParentKey',
+      `APP,,Imported epic,EPIC,sara.manager@example.com,${epic.body.item.key}`,
+    ].join('\n')), { filename: 'items.csv', contentType: 'text/csv' });
+    expect(csv.body.errors).toEqual([{ row: 2, errors: ['ParentKey: An epic is a top-level item and cannot have a parent'] }]);
+    expect(csv.body.createdCount).toBe(0);
+
+    const closeEpic = await agent.patch(`/api/items/${epic.body.item.id}`).set('x-csrf-token', csrf).send({ status: ItemStatus.DONE });
+    expect(closeEpic.status).toBe(400);
+    expect(closeEpic.body.error.message).toContain(`open child items ${story.body.item.key}`);
+  });
+
   it('round-trips item relationships through key-based CSV and preserves absent columns', async () => {
     vi.resetModules();
     const mockPrisma = createMockPrisma();

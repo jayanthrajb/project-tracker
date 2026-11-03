@@ -30,7 +30,7 @@ const schema = z.object({
   projectId: z.string().min(1),
   title: z.string().min(2),
   description: z.string(),
-  type: z.enum(['TASK', 'BUG', 'RISK', 'ENHANCEMENT']),
+  type: z.enum(['TASK', 'BUG', 'RISK', 'ENHANCEMENT', 'EPIC']),
   status: z.enum(filterOptions.status),
   priority: z.enum(['P0', 'P1', 'P2', 'P3']),
   risk: z.enum(['LOW', 'MEDIUM', 'HIGH']),
@@ -166,7 +166,7 @@ export function ItemFormModal({ item, projects, users, defaultProjectId, current
             </select>
           ) : (
             <select className="rounded-lg border border-slate-300 px-3 py-2" {...form.register(field)}>
-              {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT'] : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => <option key={option} value={option}>{option}</option>)}
+              {(field === 'type' ? ['TASK', 'BUG', 'RISK', 'ENHANCEMENT', 'EPIC'] : field === 'priority' ? ['P0', 'P1', 'P2', 'P3'] : ['LOW', 'MEDIUM', 'HIGH']).map((option) => <option key={option} value={option}>{option}</option>)}
             </select>
           )}
         </label>

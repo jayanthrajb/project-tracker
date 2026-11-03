@@ -2,14 +2,15 @@ import { useEffect, useId, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { api } from '../lib/api';
-import type { Item } from '../types';
+import type { Item, ItemType } from '../types';
 
 type ItemsResponse = { items: Item[]; total: number; pageSize: number };
 
-export function ItemLinkCombobox({ label, projectId, excludedIds, value, onChange, disabled }: {
+export function ItemLinkCombobox({ label, projectId, excludedIds, excludedTypes = [], value, onChange, disabled }: {
   label: string;
   projectId?: string;
   excludedIds: string[];
+  excludedTypes?: ItemType[];
   value: Item | null;
   onChange: (item: Item | null) => void;
   disabled: boolean;
@@ -38,7 +39,7 @@ export function ItemLinkCombobox({ label, projectId, excludedIds, value, onChang
   });
   const ready = query.length >= 2 && query === debounced && !value;
   const options = ready ? (results.data?.items ?? []).filter((entry) =>
-    !excludedIds.includes(entry.id) && (!projectId || entry.projectId === projectId),
+    !excludedIds.includes(entry.id) && !excludedTypes.includes(entry.type) && (!projectId || entry.projectId === projectId),
   ) : [];
   const activeIndex = active >= 0 && active < options.length ? active : -1;
   useEffect(() => {

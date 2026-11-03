@@ -25,6 +25,7 @@ enum ItemType {
   BUG
   RISK
   ENHANCEMENT
+  EPIC
 }
 
 enum ItemStatus {
