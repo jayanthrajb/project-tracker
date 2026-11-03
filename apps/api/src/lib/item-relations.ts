@@ -1,4 +1,4 @@
-import { DependencyType } from '@prisma/client';
+import { DependencyType, ItemStatus } from '@prisma/client';
 import type { Prisma } from '@prisma/client';
 
 import { AppError } from './errors.js';
@@ -71,4 +71,60 @@ export function normalizeDependency(fromId: string, toId: string, type: Dependen
     return { fromId: toId, toId: fromId, type };
   }
   return { fromId, toId, type };
+}
+
+type CloseClient = Pick<Prisma.TransactionClient, 'item' | 'itemDependency'>;
+type StatusOverrides = ReadonlyMap<string, ItemStatus>;
+
+/**
+ * Returns a message per item that cannot move to DONE because a child or a
+ * BLOCKS source is still open. `nextStatus` supplies statuses changing in the
+ * same batch, so closing a parent together with its children is allowed.
+ */
+export async function findCloseViolations(
+  tx: CloseClient,
+  itemIds: string[],
+  nextStatus: StatusOverrides = new Map(),
+) {
+  const violations = new Map<string, string>();
+  if (itemIds.length === 0) return violations;
+  const [items, children, blockers] = await Promise.all([
+    tx.item.findMany({ where: { id: { in: itemIds } }, select: { id: true, key: true } }),
+    tx.item.findMany({ where: { parentId: { in: itemIds } }, select: { id: true, key: true, status: true, parentId: true } }),
+    tx.itemDependency.findMany({
+      where: { toId: { in: itemIds }, type: DependencyType.BLOCKS },
+      select: { toId: true, from: { select: { id: true, key: true, status: true } } },
+    }),
+  ]);
+  const isOpen = (entry: { id: string; status: ItemStatus }) => (nextStatus.get(entry.id) ?? entry.status) !== ItemStatus.DONE;
+  for (const item of items) {
+    const openChildren = children.filter((child) => child.parentId === item.id && isOpen(child)).map((child) => child.key);
+    const openBlockers = blockers.filter((edge) => edge.toId === item.id && isOpen(edge.from)).map((edge) => edge.from.key);
+    if (openChildren.length === 0 && openBlockers.length === 0) continue;
+    const reasons = [
+      openChildren.length > 0 ? `open child items ${openChildren.join(', ')}` : '',
+      openBlockers.length > 0 ? `open blockers ${openBlockers.join(', ')}` : '',
+    ].filter(Boolean);
+    violations.set(item.id, `Cannot close ${item.key}: ${reasons.join(' and ')}. Close them first.`);
+  }
+  return violations;
+}
+
+export async function assertCanClose(tx: CloseClient, itemId: string, nextStatus?: StatusOverrides) {
+  const message = (await findCloseViolations(tx, [itemId], nextStatus)).get(itemId);
+  if (message) throw new AppError(400, message);
+}
+
+type LinkEnd = { key: string; status: ItemStatus };
+
+export function assertCanAddChild(parent: LinkEnd, child: LinkEnd) {
+  if (parent.status === ItemStatus.DONE && child.status !== ItemStatus.DONE) {
+    throw new AppError(400, `Cannot add open item ${child.key} under closed item ${parent.key}. Reopen ${parent.key} first.`);
+  }
+}
+
+export function assertCanAddBlocker(blocker: LinkEnd, blocked: LinkEnd) {
+  if (blocked.status === ItemStatus.DONE && blocker.status !== ItemStatus.DONE) {
+    throw new AppError(400, `Cannot make open item ${blocker.key} block closed item ${blocked.key}. Reopen ${blocked.key} first.`);
+  }
 }

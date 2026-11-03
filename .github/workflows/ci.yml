@@ -37,4 +37,4 @@ jobs:
       - run: docker build --build-arg VITE_API_URL=/api -f apps/web/Dockerfile -t project-tracker-web:test .
       - run: kubectl kustomize k8s/ > /tmp/project-tracker-k8s.yaml
       - run: go install github.com/yannh/kubeconform/cmd/kubeconform@v0.6.7
-      - run: "$(go env GOPATH)/bin/kubeconform" -strict -summary /tmp/project-tracker-k8s.yaml
+      - run: '"$(go env GOPATH)/bin/kubeconform" -strict -summary /tmp/project-tracker-k8s.yaml'
