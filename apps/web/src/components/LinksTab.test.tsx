@@ -126,6 +126,26 @@ describe('LinksTab', () => {
     if (!projectId) expect(screen.getByRole('option', { name: /BET-3/ })).toHaveTextContent('OPEN · BET');
   });
 
+  it('offers epics as parents but never as children, and hides the parent picker on an epic', async () => {
+    const epic = makeItem({ id: 'epic', key: 'APO-5', type: 'EPIC', title: 'Epic item', parent: null, children: [], blocks: [], blockedBy: [], relatesTo: [] });
+    const fallback = apiMock.getMockImplementation()!;
+    apiMock.mockImplementation((async (path: string, init?: RequestInit) => (path.includes('search=')
+      ? { items: [epic, candidates[6]], total: 2, pageSize: 20 }
+      : fallback(path, init))) as typeof api);
+    setup();
+    await userEvent.type(await screen.findByRole('combobox', { name: 'Parent item' }), 'item');
+    expect(await screen.findByRole('option', { name: /APO-5/ })).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('combobox', { name: 'Child item' }), 'item');
+    await screen.findByRole('option', { name: /APO-4/ });
+    expect(screen.queryByRole('option', { name: /APO-5/ })).not.toBeInTheDocument();
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    apiMock.mockImplementation((async (path: string) => ({ items: [{ ...epic, children: [child] }], total: 1, pageSize: 1, path })) as typeof api);
+    render(<QueryClientProvider client={client}><MemoryRouter><LinksTab item={epic} /></MemoryRouter></QueryClientProvider>);
+    expect(await screen.findByText('Epics are top-level items and cannot have a parent.')).toBeInTheDocument();
+    expect(screen.getAllByRole('combobox', { name: 'Parent item' })).toHaveLength(1);
+  });
+
   it.each([
     ['Parent item', 'Set parent', '/items/item', { parentId: 'same-project-choice' }],
     ['Child item', 'Add child', '/items/same-project-choice', { parentId: 'item' }],

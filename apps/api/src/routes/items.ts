@@ -18,6 +18,7 @@ import { storage } from '../lib/storage/index.js';
 import { itemStartData } from '../lib/item-status.js';
 import {
   assertCanAddBlocker,
+  assertEpicTopLevel,
   assertCanAddChild,
   assertCanClose,
   assertNoBlocksCycle,
@@ -354,6 +355,7 @@ itemsRouter.post('/', asyncHandler(async (req, res) => {
   await assertCanCreateItem(req.user, input.projectId, input.reporterId, input.assigneeId);
 
   const item = await prisma.$transaction(async (tx) => {
+    assertEpicTopLevel(input.type, input.parentId);
     await assertValidParent(tx, undefined, input.projectId, input.parentId ?? null);
     if (input.parentId) {
       const parent = await tx.item.findUnique({ where: { id: input.parentId }, select: { key: true, status: true } });
@@ -421,6 +423,7 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
       if (update.parentId !== undefined) {
         await assertValidParent(prisma, update.id, nextProjectId, update.parentId);
       }
+      assertEpicTopLevel(update.type ?? item.type, update.parentId === undefined ? item.parentId : update.parentId);
       await assertStatusRelationRules(prisma, item, update, nextStatus);
     } catch (error) {
       errors[update.id] = error instanceof AppError ? error.message : 'Invalid update';
@@ -445,6 +448,7 @@ itemsRouter.patch('/bulk', asyncHandler(async (req, res) => {
       if (update.parentId !== undefined) {
         await assertValidParent(tx, update.id, before.projectId, update.parentId);
       }
+      assertEpicTopLevel(update.type ?? before.type, update.parentId === undefined ? before.parentId : update.parentId);
       await assertStatusRelationRules(tx, before, update, nextStatus);
       const after = await tx.item.update({
         where: { id: update.id },
@@ -509,6 +513,7 @@ itemsRouter.patch('/:id', asyncHandler(async (req, res) => {
     if (input.parentId !== undefined) {
       await assertValidParent(tx, itemId, before.projectId, input.parentId);
     }
+    assertEpicTopLevel(input.type ?? before.type, input.parentId === undefined ? before.parentId : input.parentId);
     await assertStatusRelationRules(tx, before, input);
     const after = await tx.item.update({
       where: { id: itemId },
@@ -623,6 +628,11 @@ itemsRouter.post('/import', upload.single('file'), asyncHandler(async (req, res)
     }
     if (existing && !canEditItem(req.user.id, req.user.role, existing)) {
       errors.push({ row: entry.index + 2, errors: [`Key: You cannot edit ${data.key}`] });
+      continue;
+    }
+    const importedParent = data.relationshipColumns.parentKey ? data.parentKey.trim() : existing?.parentId;
+    if (data.type === ItemType.EPIC && importedParent) {
+      errors.push({ row: entry.index + 2, errors: ['ParentKey: An epic is a top-level item and cannot have a parent'] });
       continue;
     }
     if (existing && data.status === ItemStatus.DONE && existing.status !== ItemStatus.DONE) {

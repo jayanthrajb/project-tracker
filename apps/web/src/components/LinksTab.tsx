@@ -101,17 +101,17 @@ export function LinksTab({ item }: { item: Item }) {
             <section className="grid gap-2">
               <h4 className="font-medium">Parent</h4>
               {renderLinks(current.parent ? [current.parent] : [], 'parent') ?? <p className="text-sm text-slate-500">No parent</p>}
-              <div className="flex flex-wrap gap-2">
+              {current.type === 'EPIC' ? <p className="text-sm text-slate-500">Epics are top-level items and cannot have a parent.</p> : <div className="flex flex-wrap gap-2">
                 <ItemLinkCombobox label="Parent item" projectId={item.projectId} excludedIds={[item.id, ...(current.parent ? [current.parent.id] : [])]} value={selection.parent} onChange={(parent) => setSelection((value) => ({ ...value, parent }))} disabled={mutation.isPending} />
                 <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.parent || mutation.isPending} onClick={() => selection.parent && mutation.mutate({ kind: 'parent', childId: item.id, parentId: selection.parent.id })}>Set parent</button>
                 {current.parent && <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={mutation.isPending} onClick={() => mutation.mutate({ kind: 'parent', childId: item.id, parentId: null })}>Clear parent</button>}
-              </div>
+              </div>}
             </section>
             <section className="grid gap-2">
               <h4 className="font-medium">Children</h4>
               {renderLinks(current.children, 'children')}
               <div className="flex flex-wrap gap-2">
-                <ItemLinkCombobox label="Child item" projectId={item.projectId} excludedIds={[item.id, ...(current.children ?? []).map((child) => child.id)]} value={selection.child} onChange={(child) => setSelection((value) => ({ ...value, child }))} disabled={mutation.isPending} />
+                <ItemLinkCombobox label="Child item" projectId={item.projectId} excludedIds={[item.id, ...(current.children ?? []).map((child) => child.id)]} excludedTypes={['EPIC']} value={selection.child} onChange={(child) => setSelection((value) => ({ ...value, child }))} disabled={mutation.isPending} />
                 <button type="button" className="rounded-lg border border-slate-300 px-3 py-2 text-sm" disabled={!selection.child || mutation.isPending} onClick={() => selection.child && mutation.mutate({ kind: 'parent', childId: selection.child.id, parentId: item.id })}>Add child</button>
               </div>
             </section>
